@@ -48,6 +48,45 @@ run.bat
 
 **Akses Aplikasi:**
 - 🌐 Frontend: http://localhost:3000
+
+---
+
+## 🌐 Deployment
+
+### 🤖 Auto Deploy (NEW!)
+**[→ AUTO_DEPLOY_README.md](AUTO_DEPLOY_README.md)** - Deploy otomatis dengan 1 command!
+
+```bash
+./deploy-simple.sh
+```
+
+### 🚀 Manual Deploy
+**[→ DEPLOY_NOW.md](DEPLOY_NOW.md)** - Manual deploy 5 menit  
+**[→ DEPLOY_SEKARANG.md](DEPLOY_SEKARANG.md)** - Panduan Bahasa Indonesia
+
+### 📚 Complete Documentation
+**[→ DEPLOYMENT_INDEX.md](DEPLOYMENT_INDEX.md)** - Full documentation index
+
+### Quick Links
+| Guide | Purpose | Time |
+|-------|---------|------|
+| **[AUTO_DEPLOY_README.md](AUTO_DEPLOY_README.md)** | 🤖 Auto deploy | 5 min |
+| **[DEPLOY_OTOMATIS.md](DEPLOY_OTOMATIS.md)** | 🇮🇩 Auto deploy (ID) | 5 min |
+| **[DEPLOY_NOW.md](DEPLOY_NOW.md)** | Quick deploy | 5 min |
+| **[DEPLOY_SEKARANG.md](DEPLOY_SEKARANG.md)** | 🇮🇩 Quick deploy (ID) | 5 min |
+| **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** | Step-by-step | 15 min |
+| **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** | Complete guide | 30 min |
+
+### Deployment Options
+- 🤖 **Auto Deploy:** `./deploy-simple.sh` (Recommended!)
+- 📱 **One-Line:** `npm install -g vercel && cd comprehensive_frontend && vercel --prod`
+- 🔄 **CI/CD:** GitHub Actions (auto deploy on push)
+- 📝 **Manual:** Follow guides above
+
+### Supported Platforms
+- ✅ **Render.com** (Backend - Free tier)
+- ✅ **Vercel** (Frontend - Free tier)
+- ✅ Railway.app, Heroku, Netlify
 - 🔧 Backend: http://localhost:8000
 - 📚 API Docs: http://localhost:8000/docs
 
