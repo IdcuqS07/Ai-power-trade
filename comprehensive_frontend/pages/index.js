@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ethers } from 'ethers'
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User } from 'lucide-react'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88'
 const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
 const CONTRACT_ABI = [
   'function executeTrade(string symbol, string tradeType, uint256 amount, uint256 price) external returns (uint256)',
