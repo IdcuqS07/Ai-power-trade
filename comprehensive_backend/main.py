@@ -24,6 +24,11 @@ from backtesting import BacktestEngine
 from blockchain_service import blockchain_service
 from settlement_service import settlement_service
 
+# Import Database and Auth
+from database import init_db
+from auth_routes import router as auth_router
+from user_routes import router as user_router
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +48,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+    logger.info("✓ Database initialized")
+
+# Include auth and user routes
+app.include_router(auth_router)
+app.include_router(user_router)
 
 # ============ Initialize APIs ============
 # Use Binance as primary and only data source
