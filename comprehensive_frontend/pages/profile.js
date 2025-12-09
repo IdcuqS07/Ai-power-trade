@@ -3,7 +3,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { User, Settings, TrendingUp, Award, Calendar, Home } from 'lucide-react'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null)

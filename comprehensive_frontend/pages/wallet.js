@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ethers } from 'ethers'
 import { Wallet, ArrowUpCircle, ArrowDownCircle, History, DollarSign, TrendingUp, Home, Zap, ExternalLink } from 'lucide-react'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
 const BSC_TESTNET_PARAMS = {
   chainId: '0x61',
