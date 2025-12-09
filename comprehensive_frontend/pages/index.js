@@ -22,6 +22,14 @@ export default function Dashboard() {
   const [tradePercentage, setTradePercentage] = useState(10)
   const [selectedCoin, setSelectedCoin] = useState('BTC')
   const [fullPerformance, setFullPerformance] = useState(null)
+  const [user, setUser] = useState(null)
+
+  // Logout function
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    setUser(null)
+  }
 
   // Define functions before useEffect
   const addTokenToMetaMask = async () => {
@@ -131,6 +139,12 @@ export default function Dashboard() {
     
     const init = async () => {
       if (!mounted) return
+      
+      // Check if user is logged in
+      const storedUser = localStorage.getItem('user')
+      if (storedUser) {
+        setUser(JSON.parse(storedUser))
+      }
       
       await fetchDashboard()
       
@@ -248,6 +262,38 @@ export default function Dashboard() {
                 {dataSource === 'WEEX Live' ? '🟢 WEEX Live' : '🟡 Simulated'}
               </span>
             </div>
+          </div>
+          
+          {/* Auth Buttons */}
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <div className="flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-lg">
+                  <User size={18} className="text-blue-400" />
+                  <span className="text-sm font-medium">{user.username}</span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+                    Login
+                  </button>
+                </Link>
+                <Link href="/register">
+                  <button className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium transition-colors">
+                    Register
+                  </button>
+                </Link>
+              </>
+            )}
+          </div>
           </div>
           <div className="flex gap-3">
             <Link href="/wallet" className="flex items-center gap-2 bg-green-800 hover:bg-green-700 px-4 py-2 rounded-lg transition border border-green-500">
