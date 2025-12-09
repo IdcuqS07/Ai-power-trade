@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 import { ethers } from 'ethers'
 import { Wallet, ArrowUpCircle, ArrowDownCircle, History, DollarSign, TrendingUp, Home, Zap, ExternalLink } from 'lucide-react'
 
@@ -15,6 +16,7 @@ const BSC_TESTNET_PARAMS = {
 }
 
 export default function WalletPage() {
+  const router = useRouter()
   const [wallet, setWallet] = useState(null)
   const [balances, setBalances] = useState([])
   const [transactions, setTransactions] = useState([])
@@ -38,11 +40,17 @@ export default function WalletPage() {
   const [withdrawCurrency, setWithdrawCurrency] = useState('USDT')
 
   useEffect(() => {
+    // Check if user is logged in
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
     fetchWalletData()
     checkMetaMask()
     const interval = setInterval(fetchWalletData, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [router])
 
   useEffect(() => {
     if (account) {
@@ -181,10 +189,13 @@ export default function WalletPage() {
 
   const fetchWalletData = async () => {
     try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      
       const [walletRes, balancesRes, transactionsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/wallet`),
-        axios.get(`${API_URL}/api/wallet/balances`),
-        axios.get(`${API_URL}/api/wallet/transactions?limit=20`)
+        axios.get(`${API_URL}/api/wallet`, { headers }),
+        axios.get(`${API_URL}/api/wallet/balances`, { headers }),
+        axios.get(`${API_URL}/api/wallet/transactions?limit=20`, { headers })
       ])
       
       setWallet(walletRes.data.data)
@@ -193,16 +204,23 @@ export default function WalletPage() {
       setLoading(false)
     } catch (error) {
       console.error('Error fetching wallet data:', error)
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        router.push('/login')
+      }
     }
   }
 
   const handleDeposit = async () => {
     try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
       const response = await axios.post(`${API_URL}/api/wallet/deposit`, {
         operation: 'deposit',
         amount: parseFloat(depositAmount),
         currency: depositCurrency
-      })
+      }, { headers })
       
       setOperationResult({ success: true, message: response.data.message })
       setShowDepositModal(false)
@@ -217,11 +235,13 @@ export default function WalletPage() {
 
   const handleWithdraw = async () => {
     try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
       const response = await axios.post(`${API_URL}/api/wallet/withdraw`, {
         operation: 'withdraw',
         amount: parseFloat(withdrawAmount),
         currency: withdrawCurrency
-      })
+      }, { headers })
       
       setOperationResult({ success: true, message: response.data.message })
       setShowWithdrawModal(false)

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 import { User, Settings, TrendingUp, Award, Calendar, Home } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function ProfilePage() {
+  const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -20,14 +22,23 @@ export default function ProfilePage() {
   })
 
   useEffect(() => {
+    // Check if user is logged in
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
     fetchProfileData()
-  }, [])
+  }, [router])
 
   const fetchProfileData = async () => {
     try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      
       const [profileRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/user/profile`),
-        axios.get(`${API_URL}/api/user/stats`)
+        axios.get(`${API_URL}/api/user/profile`, { headers }),
+        axios.get(`${API_URL}/api/user/stats`, { headers })
       ])
       
       setProfile(profileRes.data.data)
@@ -41,12 +52,19 @@ export default function ProfilePage() {
       setLoading(false)
     } catch (error) {
       console.error('Error fetching profile:', error)
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        router.push('/login')
+      }
     }
   }
 
   const handleUpdate = async () => {
     try {
-      const response = await axios.put(`${API_URL}/api/user/profile`, formData)
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      const response = await axios.put(`${API_URL}/api/user/profile`, formData, { headers })
       setProfile(response.data.data)
       setEditing(false)
       setUpdateResult({ success: true, message: 'Profile updated successfully!' })
