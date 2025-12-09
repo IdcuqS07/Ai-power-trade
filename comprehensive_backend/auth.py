@@ -18,8 +18,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-pleas
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing with truncate_error disabled (auto-truncate long passwords)
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False
+)
 
 # Security scheme
 security = HTTPBearer()
@@ -56,9 +60,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
-    # Bcrypt has 72 byte limit, truncate password
-    if len(password) > 72:
-        password = password[:72]
+    # Passlib will auto-truncate with bcrypt__truncate_error=False
     return pwd_context.hash(password)
 
 
