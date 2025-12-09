@@ -13,6 +13,50 @@ from auth import get_current_user
 router = APIRouter(prefix="/api/user", tags=["User"])
 
 
+@router.get("/profile")
+async def get_user_profile(
+    current_user: User = Depends(get_current_user)
+):
+    """Get user profile information"""
+    return {
+        "data": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "created_at": current_user.created_at.isoformat(),
+            "is_active": current_user.is_active,
+            "risk_tolerance": "moderate",  # Default values
+            "trading_strategy": "ai_multi_indicator"
+        }
+    }
+
+
+@router.put("/profile")
+async def update_user_profile(
+    username: str = None,
+    email: str = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user profile"""
+    if username:
+        current_user.username = username
+    if email:
+        current_user.email = email
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return {
+        "data": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "created_at": current_user.created_at.isoformat()
+        }
+    }
+
+
 @router.get("/balance")
 async def get_user_balance(
     current_user: User = Depends(get_current_user),
@@ -81,10 +125,10 @@ async def get_user_stats(
     trades = db.query(Trade).filter(Trade.user_id == current_user.id).all()
     
     total_trades = len(trades)
-    winning_trades = len([t for t in trades if t.pnl > 0])
-    losing_trades = len([t for t in trades if t.pnl < 0])
+    winning_trades = len([t for t in trades if t.pnl and t.pnl > 0])
+    losing_trades = len([t for t in trades if t.pnl and t.pnl < 0])
     
-    total_pnl = sum(t.pnl for t in trades)
+    total_pnl = sum(t.pnl for t in trades if t.pnl)
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
     
     # Get balance
@@ -94,19 +138,21 @@ async def get_user_stats(
     ).first()
     
     current_balance = balance.amount if balance else 10000.0
-    initial_balance = current_user.initial_balance
+    initial_balance = 10000.0  # Default initial balance
     
     return {
-        "user_id": current_user.id,
-        "username": current_user.username,
-        "total_trades": total_trades,
-        "winning_trades": winning_trades,
-        "losing_trades": losing_trades,
-        "win_rate": round(win_rate, 2),
-        "total_pnl": round(total_pnl, 2),
-        "current_balance": round(current_balance, 2),
-        "initial_balance": initial_balance,
-        "roi": round((current_balance - initial_balance) / initial_balance * 100, 2)
+        "data": {
+            "user_id": current_user.id,
+            "username": current_user.username,
+            "total_trades": total_trades,
+            "winning_trades": winning_trades,
+            "losing_trades": losing_trades,
+            "win_rate": round(win_rate, 2),
+            "total_pnl": round(total_pnl, 2),
+            "current_balance": round(current_balance, 2),
+            "initial_balance": initial_balance,
+            "roi": round((current_balance - initial_balance) / initial_balance * 100, 2) if initial_balance > 0 else 0
+        }
     }
 
 
