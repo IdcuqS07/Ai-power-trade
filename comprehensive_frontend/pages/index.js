@@ -294,7 +294,10 @@ export default function Dashboard() {
               </>
             )}
           </div>
-          </div>
+        </div>
+        
+        {/* Navigation Links */}
+        <div className="mt-6">
           <div className="flex gap-3">
             <Link href="/wallet" className="flex items-center gap-2 bg-green-800 hover:bg-green-700 px-4 py-2 rounded-lg transition border border-green-500">
               <Wallet size={20} />
