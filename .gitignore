@@ -51,3 +51,4 @@ blockchain/.env
 *.bak
 *.cache
 .vercel
+.env*.local
