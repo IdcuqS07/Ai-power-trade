@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
 import { ethers } from 'ethers'
-import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User } from 'lucide-react'
+import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User, Brain } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88'
 const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
@@ -298,16 +298,19 @@ export default function Dashboard() {
         
         {/* Navigation Links */}
         <div className="mt-6">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
+            <Link href="/ai-explainer" className="flex items-center gap-2 bg-purple-800 hover:bg-purple-700 px-4 py-2 rounded-lg transition border-2 border-purple-400 animate-pulse">
+              <Brain size={20} />
+              <span>AI Explainer</span>
+              <span className="text-xs bg-purple-600 px-2 py-0.5 rounded">🔥 NEW</span>
+            </Link>
             <Link href="/wallet" className="flex items-center gap-2 bg-green-800 hover:bg-green-700 px-4 py-2 rounded-lg transition border border-green-500">
               <Wallet size={20} />
               <span>Wallet</span>
-              <span className="text-xs bg-green-600 px-2 py-0.5 rounded">NEW</span>
             </Link>
             <Link href="/profile" className="flex items-center gap-2 bg-blue-800 hover:bg-blue-700 px-4 py-2 rounded-lg transition border border-blue-500">
               <User size={20} />
               <span>Profile</span>
-              <span className="text-xs bg-blue-600 px-2 py-0.5 rounded">NEW</span>
             </Link>
             <Link href="/trades" className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition">
               <History size={20} />

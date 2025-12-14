@@ -788,6 +788,148 @@ async def get_prediction(symbol: str):
     signal = ai_predictor.generate_signal(symbol)
     return {"success": True, "symbol": symbol, "prediction": signal}
 
+@app.get("/api/ai/explain/{symbol}")
+async def explain_ai_decision(symbol: str):
+    """Get detailed explanation of AI decision for a symbol"""
+    if symbol not in trading_state["price_history"]:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+    
+    # Get AI signal with all indicators
+    signal = ai_predictor.generate_signal(symbol)
+    indicators = signal["indicators"]
+    
+    # Build detailed reasoning
+    reasoning = []
+    
+    # RSI Analysis
+    rsi = indicators.get("rsi", 50)
+    if rsi < 30:
+        reasoning.append({
+            "indicator": "RSI (Relative Strength Index)",
+            "explanation": f"RSI is {rsi:.2f}, which is below 30. This indicates the asset is oversold and may be due for a price increase.",
+            "impact": 2.0,
+            "signal": "BUY"
+        })
+    elif rsi > 70:
+        reasoning.append({
+            "indicator": "RSI (Relative Strength Index)",
+            "explanation": f"RSI is {rsi:.2f}, which is above 70. This indicates the asset is overbought and may be due for a price correction.",
+            "impact": -2.0,
+            "signal": "SELL"
+        })
+    else:
+        reasoning.append({
+            "indicator": "RSI (Relative Strength Index)",
+            "explanation": f"RSI is {rsi:.2f}, which is in the neutral zone (30-70). No strong signal from RSI.",
+            "impact": 0.0,
+            "signal": "NEUTRAL"
+        })
+    
+    # MACD Analysis
+    macd = indicators.get("macd", 0)
+    if macd > 0:
+        reasoning.append({
+            "indicator": "MACD (Moving Average Convergence Divergence)",
+            "explanation": f"MACD is positive ({macd:.2f}), indicating bullish momentum. The short-term trend is stronger than the long-term trend.",
+            "impact": 1.5,
+            "signal": "BUY"
+        })
+    else:
+        reasoning.append({
+            "indicator": "MACD (Moving Average Convergence Divergence)",
+            "explanation": f"MACD is negative ({macd:.2f}), indicating bearish momentum. The short-term trend is weaker than the long-term trend.",
+            "impact": -1.5,
+            "signal": "SELL"
+        })
+    
+    # Moving Average Crossover
+    ma_5 = indicators.get("ma_5", 0)
+    ma_20 = indicators.get("ma_20", 0)
+    ma_diff = ma_5 - ma_20
+    if ma_5 > ma_20:
+        reasoning.append({
+            "indicator": "Moving Average Crossover",
+            "explanation": f"5-period MA (${ma_5:.2f}) is above 20-period MA (${ma_20:.2f}). This 'Golden Cross' suggests an upward trend.",
+            "impact": 1.0,
+            "signal": "BUY"
+        })
+    else:
+        reasoning.append({
+            "indicator": "Moving Average Crossover",
+            "explanation": f"5-period MA (${ma_5:.2f}) is below 20-period MA (${ma_20:.2f}). This 'Death Cross' suggests a downward trend.",
+            "impact": -1.0,
+            "signal": "SELL"
+        })
+    
+    # Bollinger Bands
+    current_price = indicators.get("current_price", 0)
+    bb_upper = indicators.get("bb_upper", 0)
+    bb_lower = indicators.get("bb_lower", 0)
+    bb_position = (current_price - bb_lower) / (bb_upper - bb_lower + 0.0001)
+    
+    if bb_position <= 0.2:
+        reasoning.append({
+            "indicator": "Bollinger Bands",
+            "explanation": f"Price (${current_price:.2f}) is near the lower Bollinger Band (${bb_lower:.2f}). This suggests the asset may be undervalued.",
+            "impact": 1.5,
+            "signal": "BUY"
+        })
+    elif bb_position >= 0.8:
+        reasoning.append({
+            "indicator": "Bollinger Bands",
+            "explanation": f"Price (${current_price:.2f}) is near the upper Bollinger Band (${bb_upper:.2f}). This suggests the asset may be overvalued.",
+            "impact": -1.5,
+            "signal": "SELL"
+        })
+    else:
+        reasoning.append({
+            "indicator": "Bollinger Bands",
+            "explanation": f"Price (${current_price:.2f}) is within the middle range of Bollinger Bands. No extreme valuation detected.",
+            "impact": 0.0,
+            "signal": "NEUTRAL"
+        })
+    
+    # Volatility Analysis
+    volatility = indicators.get("volatility", 0)
+    reasoning.append({
+        "indicator": "Market Volatility",
+        "explanation": f"Current volatility is {volatility*100:.2f}%. {'High volatility increases risk but also potential rewards.' if volatility > 0.03 else 'Low volatility suggests a stable market with lower risk.'}",
+        "impact": 0.0,
+        "signal": "RISK_FACTOR"
+    })
+    
+    # Prepare response
+    explanation = {
+        "symbol": symbol,
+        "signal": signal["signal"],
+        "confidence": signal["confidence"],
+        "buy_score": signal["buy_score"],
+        "sell_score": signal["sell_score"],
+        "risk_score": signal["risk_score"],
+        "position_size": signal["position_size"],
+        "indicators": {
+            "rsi": rsi,
+            "macd": macd,
+            "ma_5": ma_5,
+            "ma_20": ma_20,
+            "ma_diff": ma_diff,
+            "bb_upper": bb_upper,
+            "bb_lower": bb_lower,
+            "bb_position": bb_position,
+            "current_price": current_price,
+            "volatility": volatility
+        },
+        "reasoning": reasoning,
+        "indicators_analyzed": len(reasoning),
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Add ML prediction if available
+    if "ml_prediction" in signal:
+        explanation["ml_prediction"] = signal["ml_prediction"]
+    
+    return {"success": True, "data": explanation}
+
 @app.post("/api/trades/execute")
 async def execute_trade(request: TradeRequest):
     """Execute trade with full validation"""
