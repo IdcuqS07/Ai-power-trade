@@ -28,7 +28,16 @@ export default function Dashboard() {
       price: 0,
       change_24h: 0
     },
-    prices: {},
+    prices: {
+      'BTC': { price: 45000, change_24h: 2.5 },
+      'ETH': { price: 2500, change_24h: 1.8 },
+      'BNB': { price: 350, change_24h: -0.5 },
+      'SOL': { price: 100, change_24h: 3.2 },
+      'ADA': { price: 0.5, change_24h: -1.2 },
+      'XRP': { price: 0.6, change_24h: 0.8 },
+      'DOT': { price: 7.5, change_24h: 1.5 },
+      'MATIC': { price: 0.9, change_24h: -0.3 }
+    },
     current_signal: {
       signal: 'HOLD',
       confidence: 0,
@@ -185,7 +194,16 @@ export default function Dashboard() {
           price: 0,
           change_24h: 0
         },
-        prices: {},
+        prices: {
+          'BTC': { price: 45000, change_24h: 2.5 },
+          'ETH': { price: 2500, change_24h: 1.8 },
+          'BNB': { price: 350, change_24h: -0.5 },
+          'SOL': { price: 100, change_24h: 3.2 },
+          'ADA': { price: 0.5, change_24h: -1.2 },
+          'XRP': { price: 0.6, change_24h: 0.8 },
+          'DOT': { price: 7.5, change_24h: 1.5 },
+          'MATIC': { price: 0.9, change_24h: -0.3 }
+        },
         current_signal: {
           signal: 'HOLD',
           confidence: 0,
@@ -369,7 +387,12 @@ export default function Dashboard() {
   }
 
   const { 
-    prices = {}, 
+    prices = {
+      'BTC': { price: 45000, change_24h: 2.5 },
+      'ETH': { price: 2500, change_24h: 1.8 },
+      'BNB': { price: 350, change_24h: -0.5 },
+      'SOL': { price: 100, change_24h: 3.2 }
+    }, 
     current_signal = { signal: 'HOLD', confidence: 0, risk_score: 0, position_size: 0, buy_score: 0, combined_confidence: 0 }, 
     portfolio = { total_value: 10000, profit_loss: 0, profit_loss_pct: 0, positions_count: 0 }, 
     performance = { total_trades: 0, winning_trades: 0, losing_trades: 0, win_rate: 0, total_profit: 0 }, 
