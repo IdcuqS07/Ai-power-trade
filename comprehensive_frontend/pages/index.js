@@ -113,6 +113,25 @@ export default function Dashboard() {
       if (error.name !== 'AbortError') {
         console.error('Error fetching dashboard:', error.message)
       }
+      // Set fallback data when API is unavailable
+      setDashboardData({
+        current_price: 0,
+        prediction: 0,
+        confidence: 0,
+        recommendation: 'HOLD',
+        balance: 10000,
+        total_trades: 0,
+        win_rate: 0,
+        total_profit: 0,
+        active_position: null,
+        recent_trades: [],
+        market_data: {
+          symbol: selectedCoin,
+          price: 0,
+          change_24h: 0
+        }
+      })
+      setDataSource('Demo Mode - Backend Offline')
       setLoading(false)
     }
   }, [fetchFullPerformance])
