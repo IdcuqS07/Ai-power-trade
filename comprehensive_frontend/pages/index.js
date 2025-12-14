@@ -29,7 +29,14 @@ export default function Dashboard() {
       change_24h: 0
     },
     prices: {},
-    current_signal: {},
+    current_signal: {
+      signal: 'HOLD',
+      confidence: 0,
+      risk_score: 0,
+      position_size: 0,
+      buy_score: 0,
+      combined_confidence: 0
+    },
     portfolio: {
       total_value: 10000,
       profit_loss: 0,
@@ -179,7 +186,14 @@ export default function Dashboard() {
           change_24h: 0
         },
         prices: {},
-        current_signal: {},
+        current_signal: {
+          signal: 'HOLD',
+          confidence: 0,
+          risk_score: 0,
+          position_size: 0,
+          buy_score: 0,
+          combined_confidence: 0
+        },
         portfolio: {
           total_value: 10000,
           profit_loss: 0,
@@ -356,7 +370,7 @@ export default function Dashboard() {
 
   const { 
     prices = {}, 
-    current_signal = {}, 
+    current_signal = { signal: 'HOLD', confidence: 0, risk_score: 0, position_size: 0, buy_score: 0, combined_confidence: 0 }, 
     portfolio = { total_value: 10000, profit_loss: 0, profit_loss_pct: 0, positions_count: 0 }, 
     performance = { total_trades: 0, winning_trades: 0, losing_trades: 0, win_rate: 0, total_profit: 0 }, 
     smart_contract = { risk_limits: { max_position_size_pct: 10, max_daily_loss_pct: 5, min_confidence: 0.7 } }, 
@@ -552,12 +566,12 @@ export default function Dashboard() {
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-gray-400">Confidence</span>
-                <span>{(current_signal.confidence * 100).toFixed(1)}%</span>
+                <span>{((current_signal?.confidence || 0) * 100).toFixed(1)}%</span>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
                   className="bg-blue-500 h-2 rounded-full" 
-                  style={{ width: `${current_signal.confidence * 100}%` }}
+                  style={{ width: `${(current_signal?.confidence || 0) * 100}%` }}
                 />
               </div>
             </div>
@@ -565,27 +579,27 @@ export default function Dashboard() {
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-gray-400">Risk Score</span>
-                <span>{current_signal.risk_score}/100</span>
+                <span>{current_signal?.risk_score || 0}/100</span>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
                   className={`h-2 rounded-full ${
-                    current_signal.risk_score < 40 ? 'bg-green-500' :
-                    current_signal.risk_score < 70 ? 'bg-yellow-500' : 'bg-red-500'
+                    (current_signal?.risk_score || 0) < 40 ? 'bg-green-500' :
+                    (current_signal?.risk_score || 0) < 70 ? 'bg-yellow-500' : 'bg-red-500'
                   }`}
-                  style={{ width: `${current_signal.risk_score}%` }}
+                  style={{ width: `${current_signal?.risk_score || 0}%` }}
                 />
               </div>
             </div>
 
             <div className="flex justify-between">
               <span className="text-gray-400">Position Size</span>
-              <span className="font-bold">{current_signal.position_size}%</span>
+              <span className="font-bold">{current_signal?.position_size || 0}%</span>
             </div>
 
             <div className="flex justify-between">
               <span className="text-gray-400">Buy Score</span>
-              <span className="text-green-500">{current_signal.buy_score}</span>
+              <span className="text-green-500">{current_signal?.buy_score || 0}</span>
             </div>
 
             <div className="flex justify-between">
@@ -635,7 +649,7 @@ export default function Dashboard() {
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400">Combined Confidence</span>
                       <span className="text-purple-300 font-bold">
-                        {(current_signal.combined_confidence * 100).toFixed(1)}%
+                        {((current_signal?.combined_confidence || 0) * 100).toFixed(1)}%
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
