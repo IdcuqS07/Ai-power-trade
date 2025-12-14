@@ -78,10 +78,13 @@ export default function Dashboard() {
   const fetchDashboard = useCallback(async () => {
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
       
       const response = await fetch(`${API_URL}/api/dashboard`, {
-        signal: controller.signal
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json'
+        }
       })
       clearTimeout(timeoutId)
       
