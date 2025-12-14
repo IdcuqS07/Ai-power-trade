@@ -15,6 +15,7 @@ import random
 import hashlib
 import numpy as np
 import logging
+import time
 
 # Import WEEX API, Binance API, Binance Trading and Backtesting
 from weex_api import WeexAPI
@@ -75,10 +76,7 @@ trading_state = {
     "pnl": 0.0,
     "positions": [],
     "price_history": {
-        "BTC": [],
-        "ETH": [],
-        "BNB": [],
-        "SOL": []
+        "BTC": [], "ETH": [], "BNB": [], "SOL": [], "XRP": [], "ADA": [], "MATIC": [], "LINK": []
     },
     "trades_today": 0,
     "daily_pnl": 0.0,
@@ -111,10 +109,7 @@ wallet_state = {
     "wallet_id": "WALLET_001",
     "balances": {
         "USDT": 10000.0,
-        "BTC": 0.0,
-        "ETH": 0.0,
-        "BNB": 0.0,
-        "SOL": 0.0
+        "BTC": 0.0, "ETH": 0.0, "BNB": 0.0, "SOL": 0.0, "XRP": 0.0, "ADA": 0.0, "MATIC": 0.0, "LINK": 0.0
     },
     "locked_balances": {
         "USDT": 0.0,
@@ -132,8 +127,8 @@ wallet_state = {
 # Initialize price history
 def initialize_price_history():
     """Initialize price history from Binance"""
-    # Trading Pairs
-    symbols = ["BTC", "ETH", "SOL", "DOGE", "XRP", "ADA", "BNB", "AVAX"]
+    # Trading Pairs - Top 8 coins (Best Balance)
+    symbols = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"]
     
     for symbol in symbols:
         # Get historical data from Binance
@@ -567,11 +562,17 @@ backtest_engine = BacktestEngine()
 # Performance cache with longer TTL
 performance_cache = {"data": None, "timestamp": 0, "ttl": 300}  # 5 minutes cache
 
-# Prices cache to reduce API calls
-prices_cache = {"data": None, "timestamp": 0, "ttl": 10}  # 10 seconds cache
+# Prices cache to reduce API calls - Optimized for speed
+prices_cache = {"data": None, "timestamp": 0, "ttl": 90}  # 90 seconds cache (1.5 minutes)
+
+# Dashboard cache for faster loading - Increased TTL
+dashboard_cache = {"data": {}, "timestamp": {}, "ttl": 60}  # 60 seconds per symbol (1 minute)
 
 # Trade history cache to reduce blockchain calls
-trade_history_cache = {"data": None, "timestamp": 0, "ttl": 30, "key": None}  # 30 seconds cache
+trade_history_cache = {"data": None, "timestamp": 0, "ttl": 60, "key": None}  # 60 seconds cache
+
+# AI Explanation cache for faster AI Explainer page
+ai_explanation_cache = {"data": {}, "timestamp": {}, "ttl": 90}  # 90 seconds per symbol
 
 def get_cached_performance():
     """Get performance data with caching - optimized for speed"""
@@ -671,14 +672,26 @@ async def get_api_status():
     }
 
 @app.get("/api/dashboard")
-async def get_dashboard():
-    """Get complete dashboard data with live WEEX prices"""
+async def get_dashboard(symbol: str = "BTC"):
+    """Get complete dashboard data with live prices and AI signal for specified symbol"""
+    import time
+    
+    # Check dashboard cache first
+    current_time = time.time()
+    cache_key = symbol
+    if (cache_key in dashboard_cache["data"] and 
+        cache_key in dashboard_cache["timestamp"] and
+        (current_time - dashboard_cache["timestamp"][cache_key]) < dashboard_cache["ttl"]):
+        cached_data = dashboard_cache["data"][cache_key]
+        cached_data["cache_hit"] = True
+        return {"success": True, "data": cached_data, "source": "cache"}
+    
     # Get current prices (live or simulated)
     prices_response = await get_prices()
     prices = prices_response["data"]
     
-    # Get AI signal for BTC
-    signal = ai_predictor.generate_signal("BTC")
+    # Get AI signal for requested symbol (default BTC)
+    signal = ai_predictor.generate_signal(symbol)
     
     # Portfolio
     portfolio = {
@@ -698,17 +711,26 @@ async def get_dashboard():
     # Oracle stats
     oracle_stats = oracle.get_stats()
     
+    # Prepare response data
+    response_data = {
+        "prices": prices,
+        "current_signal": signal,
+        "portfolio": portfolio,
+        "performance": performance,
+        "smart_contract": sc_stats,
+        "oracle": oracle_stats,
+        "trades_today": trading_state["trades_today"],
+        "cache_hit": False
+    }
+    
+    # Save to cache
+    dashboard_cache["data"][cache_key] = response_data
+    dashboard_cache["timestamp"][cache_key] = current_time
+    
     return {
         "success": True,
-        "data": {
-            "prices": prices,
-            "current_signal": signal,
-            "portfolio": portfolio,
-            "performance": performance,
-            "smart_contract": sc_stats,
-            "oracle": oracle_stats,
-            "trades_today": trading_state["trades_today"]
-        }
+        "data": response_data,
+        "source": "fresh"
     }
 
 @app.get("/api/market/prices")
@@ -721,8 +743,10 @@ async def get_prices():
     if prices_cache["data"] and (current_time - prices_cache["timestamp"]) < prices_cache["ttl"]:
         return {"success": True, "data": prices_cache["data"], "source": "cache"}
     
-    # Trading Pairs
-    SYMBOLS = ["BTC", "ETH", "SOL", "DOGE", "XRP", "ADA", "BNB", "AVAX"]
+    # Trading Pairs - Top 8 coins (Best Balance)
+    SYMBOLS = [
+        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"
+    ]
     prices = {}
     
     # Get live data from Binance
@@ -793,6 +817,17 @@ async def explain_ai_decision(symbol: str):
     """Get detailed explanation of AI decision for a symbol"""
     if symbol not in trading_state["price_history"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
+    
+    # Check cache first for faster loading
+    current_time = time.time()
+    cache_key = symbol
+    if (cache_key in ai_explanation_cache["data"] and 
+        cache_key in ai_explanation_cache["timestamp"] and
+        (current_time - ai_explanation_cache["timestamp"][cache_key]) < ai_explanation_cache["ttl"]):
+        cached_data = ai_explanation_cache["data"][cache_key]
+        cached_data["cache_hit"] = True
+        logger.debug(f"Using cached AI explanation for {symbol}")
+        return {"success": True, "data": cached_data, "source": "cache"}
     
     # Get AI signal with all indicators
     signal = ai_predictor.generate_signal(symbol)
@@ -928,7 +963,11 @@ async def explain_ai_decision(symbol: str):
     if "ml_prediction" in signal:
         explanation["ml_prediction"] = signal["ml_prediction"]
     
-    return {"success": True, "data": explanation}
+    # Cache the explanation for faster subsequent requests
+    ai_explanation_cache["data"][cache_key] = explanation
+    ai_explanation_cache["timestamp"][cache_key] = current_time
+    
+    return {"success": True, "data": explanation, "source": "fresh"}
 
 @app.post("/api/trades/execute")
 async def execute_trade(request: TradeRequest):

@@ -4,11 +4,30 @@ import Link from 'next/link'
 import { ethers } from 'ethers'
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User, Brain } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
 const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
+
+// Use proper ABI from contract
 const CONTRACT_ABI = [
-  'function executeTrade(string symbol, string tradeType, uint256 amount, uint256 price) external returns (uint256)',
-  'function balanceOf(address) external view returns (uint256)'
+  {
+    "inputs": [
+      {"internalType": "string", "name": "_symbol", "type": "string"},
+      {"internalType": "string", "name": "_tradeType", "type": "string"},
+      {"internalType": "uint256", "name": "_amount", "type": "uint256"},
+      {"internalType": "uint256", "name": "_price", "type": "uint256"}
+    ],
+    "name": "executeTrade",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
 ]
 
 export default function Dashboard() {
@@ -29,14 +48,14 @@ export default function Dashboard() {
       change_24h: 0
     },
     prices: {
-      'BTC': { price: 45000, change_24h: 2.5 },
-      'ETH': { price: 2500, change_24h: 1.8 },
-      'BNB': { price: 350, change_24h: -0.5 },
-      'SOL': { price: 100, change_24h: 3.2 },
-      'ADA': { price: 0.5, change_24h: -1.2 },
-      'XRP': { price: 0.6, change_24h: 0.8 },
-      'DOT': { price: 7.5, change_24h: 1.5 },
-      'MATIC': { price: 0.9, change_24h: -0.3 }
+      'BTC': { price: 0, change_24h: 0 },
+      'ETH': { price: 0, change_24h: 0 },
+      'BNB': { price: 0, change_24h: 0 },
+      'SOL': { price: 0, change_24h: 0 },
+      'XRP': { price: 0, change_24h: 0 },
+      'ADA': { price: 0, change_24h: 0 },
+      'MATIC': { price: 0, change_24h: 0 },
+      'LINK': { price: 0, change_24h: 0 }
     },
     current_signal: {
       signal: 'HOLD',
@@ -112,139 +131,164 @@ export default function Dashboard() {
   }
 
   const fetchBlockchainBalance = useCallback(async (address) => {
-    if (typeof window === 'undefined' || !window.ethereum) return
+    if (typeof window === 'undefined' || !window.ethereum) {
+      console.log('Window.ethereum not available')
+      return
+    }
     
     try {
+      console.log('Fetching balance for address:', address)
+      console.log('Contract address:', CONTRACT_ADDRESS)
       const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const network = await provider.getNetwork()
+      console.log('Connected to network:', network.name, network.chainId)
+      
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider)
       const balance = await contract.balanceOf(address)
-      setBlockchainBalance(parseFloat(ethers.utils.formatEther(balance)))
+      const formattedBalance = parseFloat(ethers.utils.formatEther(balance))
+      console.log('Blockchain balance:', formattedBalance)
+      setBlockchainBalance(formattedBalance)
     } catch (error) {
-      console.error('Balance fetch error:', error)
+      console.error('Balance fetch error:', error.message)
+      console.error('Full error:', error)
     }
   }, [])
 
   const fetchFullPerformance = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/trades/performance`)
+      // Use proxy API to avoid mixed content issues (HTTPS -> HTTP blocked)
+      const response = await fetch('/api/performance')
       const data = await response.json()
       if (data && data.data) {
         setFullPerformance(data.data)
       }
     } catch (error) {
       console.error('Error fetching full performance:', error.message)
+      // Set fallback data
+      setFullPerformance({
+        total_trades: 0,
+        winning_trades: 0,
+        losing_trades: 0,
+        win_rate: 0,
+        total_profit: 0,
+        avg_profit: 0
+      })
     }
   }, [])
 
   const fetchDashboard = useCallback(async () => {
+    console.log('=== FETCHING DASHBOARD FOR COIN:', selectedCoin, '===')
+    
+    // ALWAYS fetch Binance prices first (highest priority)
+    let binancePrices = {}
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      console.log('→ Fetching Binance prices from proxy API...')
+      const pricesResponse = await fetch('/api/market/prices')
+      console.log('→ Prices response status:', pricesResponse.status)
       
-      const response = await fetch(`${API_URL}/api/dashboard`, {
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json'
-        }
-      })
-      clearTimeout(timeoutId)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      if (data && data.data) {
-        setDashboardData(data.data)
-        setLoading(false)
+      if (pricesResponse.ok) {
+        const pricesData = await pricesResponse.json()
+        console.log('→ Binance prices data:', pricesData)
         
-        // Fetch full performance stats in background
-        fetchFullPerformance()
-      }
-      
-      // Check data source (non-blocking)
-      try {
-        const statusResponse = await fetch(`${API_URL}/api/status`)
-        const statusData = await statusResponse.json()
-        if (statusData.success) {
-          setDataSource(statusData.data_source)
+        if (pricesData.success && pricesData.data) {
+          // Convert Binance format to our format
+          Object.entries(pricesData.data).forEach(([symbol, info]) => {
+            binancePrices[symbol] = {
+              price: info.price,
+              change_24h: info.change_24h
+            }
+          })
+          console.log('✓ Successfully formatted Binance prices:', Object.keys(binancePrices).length, 'coins')
         }
-      } catch (statusError) {
-        setDataSource('Unknown')
       }
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Error fetching dashboard:', error.message)
-      }
-      // Set fallback data when API is unavailable
-      setDashboardData({
-        current_price: 0,
-        prediction: 0,
-        confidence: 0,
-        recommendation: 'HOLD',
-        balance: 10000,
-        total_trades: 0,
-        win_rate: 0,
-        total_profit: 0,
-        active_position: null,
-        recent_trades: [],
+    } catch (priceError) {
+      console.error('✗ Error fetching Binance prices:', priceError.message)
+    }
+
+    // If we got Binance prices, use them immediately
+    if (Object.keys(binancePrices).length > 0) {
+      console.log('✓ Using Binance prices directly, count:', Object.keys(binancePrices).length)
+      console.log('✓ Sample price BTC:', binancePrices['BTC'])
+      
+      const newData = {
+        ...dashboardData,
+        prices: { ...binancePrices },
         market_data: {
           symbol: selectedCoin,
-          price: 0,
-          change_24h: 0
-        },
-        prices: {
-          'BTC': { price: 45000, change_24h: 2.5 },
-          'ETH': { price: 2500, change_24h: 1.8 },
-          'BNB': { price: 350, change_24h: -0.5 },
-          'SOL': { price: 100, change_24h: 3.2 },
-          'ADA': { price: 0.5, change_24h: -1.2 },
-          'XRP': { price: 0.6, change_24h: 0.8 },
-          'DOT': { price: 7.5, change_24h: 1.5 },
-          'MATIC': { price: 0.9, change_24h: -0.3 }
-        },
-        current_signal: {
-          signal: 'HOLD',
-          confidence: 0,
-          risk_score: 0,
-          position_size: 0,
-          buy_score: 0,
-          combined_confidence: 0
-        },
-        portfolio: {
-          total_value: 10000,
-          profit_loss: 0,
-          profit_loss_pct: 0,
-          positions_count: 0
-        },
-        performance: {
-          total_trades: 0,
-          winning_trades: 0,
-          losing_trades: 0,
-          win_rate: 0,
-          total_profit: 0
-        },
-        smart_contract: {
-          risk_limits: {
-            max_position_size_pct: 10,
-            max_daily_loss_pct: 5,
-            min_confidence: 0.7
-          }
-        },
-        oracle: {}
-      })
-      setDataSource('Demo Mode - Backend Offline')
+          price: binancePrices[selectedCoin]?.price || 0,
+          change_24h: binancePrices[selectedCoin]?.change_24h || 0
+        }
+      }
+      console.log('✓ Setting dashboard data with prices:', Object.keys(newData.prices).length)
+      setDashboardData(newData)
+      setDataSource('🟢 Binance Live')
+      setLoading(false)
+    } else {
+      console.log('✗ No Binance prices received - using demo data')
+      setDataSource('🟡 Demo Mode (API unavailable)')
       setLoading(false)
     }
-  }, [fetchFullPerformance])
+
+    // Then try to fetch full dashboard data from backend (includes AI signal)
+    try {
+      console.log('→ Fetching backend dashboard data for', selectedCoin, 'via proxy...')
+      
+      // Use proxy API to avoid CORS and mixed content issues
+      const response = await fetch(`/api/dashboard?symbol=${selectedCoin}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.data) {
+          const isCached = data.source === 'cache' || data.data.cache_hit
+          console.log('✓ Got backend dashboard data', isCached ? '(from cache ⚡)' : '(fresh)')
+          console.log('  → Signal:', data.data.current_signal?.signal)
+          console.log('  → Confidence:', data.data.current_signal?.confidence)
+          console.log('  → Risk Score:', data.data.current_signal?.risk_score)
+          console.log('  → Buy Score:', data.data.current_signal?.buy_score)
+          console.log('  → Sell Score:', data.data.current_signal?.sell_score)
+          
+          // Merge backend data with Binance prices (Binance prices take priority)
+          const mergedData = {
+            ...data.data,
+            prices: Object.keys(binancePrices).length > 0 ? { ...binancePrices } : data.data.prices
+          }
+          
+          console.log('✓ Setting dashboard with AI signal data')
+          setDashboardData(mergedData)
+          setDataSource(isCached ? '🟢 Binance + AI (cached ⚡)' : '🟢 Binance + AI Live')
+          
+          // Fetch full performance stats in background
+          fetchFullPerformance()
+        }
+      }
+    } catch (backendError) {
+      console.log('✗ Backend dashboard not available:', backendError.message)
+      // This is OK - we already have Binance prices
+    }
+    
+    console.log('=== DASHBOARD FETCH COMPLETE ===')
+  }, [fetchFullPerformance, selectedCoin])
 
   const checkMetaMask = useCallback(async () => {
+    if (typeof window === 'undefined') return
+    
+    // First, try to load from localStorage
+    const savedAddress = localStorage.getItem('wallet_address')
+    if (savedAddress) {
+      console.log('Loading wallet from localStorage:', savedAddress)
+      setAccount(savedAddress)
+      fetchBlockchainBalance(savedAddress)
+    }
+    
+    // Then check MetaMask
     if (typeof window.ethereum !== 'undefined') {
       try {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' })
         if (accounts.length > 0) {
+          console.log('MetaMask connected:', accounts[0])
           setAccount(accounts[0])
+          // Save to localStorage for persistence
+          localStorage.setItem('wallet_address', accounts[0])
           fetchBlockchainBalance(accounts[0])
           // Auto-add token to MetaMask
           await addTokenToMetaMask()
@@ -262,8 +306,17 @@ export default function Dashboard() {
     const init = async () => {
       if (!mounted) return
       
-      // Check if user is logged in
+      // IMMEDIATELY load wallet from localStorage (before any async operations)
       if (typeof window !== 'undefined') {
+        const savedAddress = localStorage.getItem('wallet_address')
+        if (savedAddress) {
+          console.log('🔵 Loading wallet from localStorage immediately:', savedAddress)
+          setAccount(savedAddress)
+          // Start fetching balance in background
+          fetchBlockchainBalance(savedAddress)
+        }
+        
+        // Check if user is logged in
         const storedUser = localStorage.getItem('user')
         if (storedUser) {
           try {
@@ -274,19 +327,12 @@ export default function Dashboard() {
         }
       }
       
-      // Set timeout to ensure loading state is cleared
-      const loadingTimeout = setTimeout(() => {
-        if (mounted) {
-          setLoading(false)
-          setDataSource('Demo Mode')
-        }
-      }, 6000)
-      
+      // Fetch dashboard data
       await fetchDashboard()
-      clearTimeout(loadingTimeout)
       
       if (!mounted) return
       
+      // Check MetaMask (this will update if different from localStorage)
       await checkMetaMask()
       
       // Start interval after initial load
@@ -308,7 +354,7 @@ export default function Dashboard() {
         intervalId = null
       }
     }
-  }, [fetchDashboard, checkMetaMask])
+  }, [fetchDashboard, checkMetaMask, selectedCoin])
 
   const executeTrade = async (symbol) => {
     if (!account) {
@@ -332,7 +378,9 @@ export default function Dashboard() {
       
       const signal = dashboardData.current_signal
       const currentPrice = dashboardData.prices[symbol]?.price || 50000
-      const tradeAmount = ethers.utils.parseEther((blockchainBalance * (tradePercentage / 100)).toString())
+      
+      // Calculate trade amount (percentage of balance)
+      const tradeAmountFloat = blockchainBalance * (tradePercentage / 100)
       
       if (blockchainBalance < 1) {
         setTradeResult({ success: false, reason: 'Insufficient balance. Claim tokens from Wallet page first!' })
@@ -340,17 +388,182 @@ export default function Dashboard() {
         return
       }
       
-      setTradeResult({ success: true, message: 'Sending transaction to blockchain...' })
+      if (tradeAmountFloat < 0.01) {
+        setTradeResult({ success: false, reason: 'Trade amount too small. Minimum 0.01 atUSDT' })
+        setExecuting(false)
+        return
+      }
       
-      const tx = await contract.executeTrade(
-        symbol,
-        signal.signal,
-        tradeAmount,
-        Math.floor(currentPrice)
-      )
+      // Convert to Wei (18 decimals) - use parseEther for clean conversion
+      const tradeAmount = ethers.utils.parseEther(tradeAmountFloat.toString())
       
-      setTradeResult({ success: true, message: 'Waiting for confirmation...' })
-      await tx.wait()
+      // Price as simple integer (no decimals for now to avoid issues)
+      // Example: 50000.50 -> 50000
+      const priceInteger = Math.floor(currentPrice)
+      
+      // Clean string parameters
+      const cleanSymbol = String(symbol).trim().toUpperCase()
+      const cleanTradeType = String(signal.signal).trim().toUpperCase()
+      
+      console.log('Trade params:', {
+        symbol: cleanSymbol,
+        tradeType: cleanTradeType,
+        amount: tradeAmount.toString(),
+        amountHex: tradeAmount.toHexString(),
+        price: priceInteger,
+        amountInTokens: tradeAmountFloat,
+        accountBalance: blockchainBalance
+      })
+      
+      // Check tBNB balance for gas
+      const bnbBalance = await provider.getBalance(account)
+      const bnbBalanceEth = ethers.utils.formatEther(bnbBalance)
+      console.log('tBNB balance:', bnbBalanceEth)
+      
+      if (parseFloat(bnbBalanceEth) < 0.001) {
+        setTradeResult({ 
+          success: false, 
+          reason: `Insufficient tBNB for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} tBNB. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart` 
+        })
+        setExecuting(false)
+        return
+      }
+      
+      // Check actual contract balance
+      const contractBalance = await contract.balanceOf(account)
+      const contractBalanceFormatted = parseFloat(ethers.utils.formatEther(contractBalance))
+      console.log('Contract balance:', contractBalanceFormatted)
+      
+      if (contractBalanceFormatted < tradeAmountFloat) {
+        setTradeResult({ 
+          success: false, 
+          reason: `Insufficient atUSDT balance. You have ${contractBalanceFormatted.toFixed(2)} atUSDT but trying to trade ${tradeAmountFloat.toFixed(2)} atUSDT` 
+        })
+        setExecuting(false)
+        return
+      }
+      
+      setTradeResult({ success: true, message: 'Estimating gas...' })
+      
+      // Estimate gas first
+      try {
+        const gasEstimate = await contract.estimateGas.executeTrade(
+          cleanSymbol,
+          cleanTradeType,
+          tradeAmount,
+          priceInteger
+        )
+        console.log('Gas estimate:', gasEstimate.toString())
+        
+        setTradeResult({ success: true, message: 'Sending transaction to blockchain...' })
+        
+        // Send transaction with gas buffer
+        const tx = await contract.executeTrade(
+          cleanSymbol,
+          cleanTradeType,
+          tradeAmount,
+          priceInteger,
+          {
+            gasLimit: gasEstimate.mul(120).div(100) // 20% buffer
+          }
+        )
+        
+        console.log('Transaction sent:', tx.hash)
+        setTradeResult({ success: true, message: `Transaction sent! Hash: ${tx.hash.slice(0, 10)}... Waiting for confirmation...` })
+        
+        const receipt = await tx.wait()
+        console.log('Transaction confirmed:', receipt)
+        
+        if (receipt.status === 0) {
+          setTradeResult({ success: false, reason: 'Transaction failed on blockchain. Check BscScan for details.' })
+          setExecuting(false)
+          return
+        }
+      } catch (estimateError) {
+        console.error('Gas estimation failed:', estimateError)
+        console.log('⚠️ Blockchain trade failed, falling back to simulated trade...')
+        
+        // FALLBACK: Execute simulated trade via backend API
+        try {
+          setTradeResult({ success: true, message: 'Blockchain unavailable, executing simulated trade...' })
+          
+          const simulatedTradeData = {
+            symbol: cleanSymbol,
+            trade_type: cleanTradeType,
+            amount: tradeAmountFloat,
+            price: priceInteger,
+            wallet_address: account,
+            confidence: signal.confidence,
+            risk_score: signal.risk_score
+          }
+          
+          console.log('Sending simulated trade:', simulatedTradeData)
+          
+          const response = await fetch('/api/trades/execute-simulated', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(simulatedTradeData)
+          })
+          
+          if (!response.ok) {
+            throw new Error('Simulated trade API failed')
+          }
+          
+          const result = await response.json()
+          console.log('Simulated trade result:', result)
+          
+          if (result.success) {
+            setTradeResult({ 
+              success: true, 
+              trade: {
+                trade_id: result.trade_id || 'SIM-' + Date.now(),
+                symbol: cleanSymbol,
+                type: cleanTradeType,
+                price: priceInteger,
+                confidence: signal.confidence,
+                amount: tradeAmountFloat,
+                mode: 'SIMULATED'
+              }
+            })
+            
+            // Refresh dashboard to show updated stats
+            setTimeout(() => {
+              fetchDashboard()
+            }, 1000)
+          } else {
+            throw new Error(result.message || 'Simulated trade failed')
+          }
+          
+          setExecuting(false)
+          return
+          
+        } catch (simulatedError) {
+          console.error('Simulated trade also failed:', simulatedError)
+          
+          // If even simulated trade fails, show error
+          let revertReason = 'Unknown error'
+          if (estimateError.reason) {
+            revertReason = estimateError.reason
+          } else if (estimateError.message) {
+            if (estimateError.message.includes('Insufficient balance')) {
+              revertReason = 'Insufficient atUSDT balance in contract'
+            } else if (estimateError.message.includes('Amount must be > 0')) {
+              revertReason = 'Trade amount must be greater than 0'
+            } else {
+              revertReason = estimateError.message
+            }
+          }
+          
+          setTradeResult({ 
+            success: false, 
+            reason: `Contract error: ${revertReason}. Simulated trade also failed: ${simulatedError.message}` 
+          })
+          setExecuting(false)
+          return
+        }
+      }
       
       setTradeResult({ 
         success: true, 
@@ -368,7 +581,28 @@ export default function Dashboard() {
       
     } catch (error) {
       console.error('Trade error:', error)
-      setTradeResult({ success: false, reason: error.message || 'Trade failed' })
+      
+      let errorMessage = 'Trade failed: '
+      
+      if (error.code === 4001) {
+        errorMessage += 'Transaction rejected by user'
+      } else if (error.code === -32603) {
+        errorMessage += 'Internal error. Check your balance and gas.'
+      } else if (error.message?.includes('insufficient funds')) {
+        errorMessage += 'Insufficient tBNB for gas fees'
+      } else if (error.message?.includes('Insufficient balance')) {
+        errorMessage += 'Insufficient atUSDT balance'
+      } else if (error.message?.includes('Amount must be > 0')) {
+        errorMessage += 'Trade amount must be greater than 0'
+      } else if (error.reason) {
+        errorMessage += error.reason
+      } else if (error.message) {
+        errorMessage += error.message
+      } else {
+        errorMessage += 'Unknown error. Check console for details.'
+      }
+      
+      setTradeResult({ success: false, reason: errorMessage })
     }
     
     setExecuting(false)
@@ -387,18 +621,24 @@ export default function Dashboard() {
   }
 
   const { 
-    prices = {
-      'BTC': { price: 45000, change_24h: 2.5 },
-      'ETH': { price: 2500, change_24h: 1.8 },
-      'BNB': { price: 350, change_24h: -0.5 },
-      'SOL': { price: 100, change_24h: 3.2 }
-    }, 
-    current_signal = { signal: 'HOLD', confidence: 0, risk_score: 0, position_size: 0, buy_score: 0, combined_confidence: 0 }, 
+    prices = {}, 
+    current_signal = { signal: 'HOLD', confidence: 0.5, risk_score: 50, position_size: 5, buy_score: 0, sell_score: 0, combined_confidence: 0.5 }, 
     portfolio = { total_value: 10000, profit_loss: 0, profit_loss_pct: 0, positions_count: 0 }, 
     performance = { total_trades: 0, winning_trades: 0, losing_trades: 0, win_rate: 0, total_profit: 0 }, 
-    smart_contract = { risk_limits: { max_position_size_pct: 10, max_daily_loss_pct: 5, min_confidence: 0.7 } }, 
-    oracle = {} 
+    smart_contract = { 
+      risk_limits: { max_position_size_pct: 10, max_daily_loss_pct: 5, min_confidence: 0.7 },
+      total_validations: 0,
+      validation_pass_rate: 0,
+      total_records: 0,
+      total_settlements: 0
+    }, 
+    oracle = {
+      total_verifications: 0,
+      verification_rate: 0
+    } 
   } = dashboardData || {}
+  
+  console.log('Rendering with prices:', prices)
   
   // Use full performance if available, otherwise use quick stats from dashboard
   const displayPerformance = fullPerformance || performance
@@ -411,11 +651,20 @@ export default function Dashboard() {
           <div>
             <h1 className="text-4xl font-bold mb-2">AI Trading Platform</h1>
             <p className="text-gray-400">Comprehensive Trading System dengan AI, Smart Contract & Oracle</p>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-500">Data Source:</span>
-              <span className={`text-sm font-semibold ${dataSource === 'WEEX Live' ? 'text-green-500' : 'text-yellow-500'}`}>
-                {dataSource === 'WEEX Live' ? '🟢 WEEX Live' : '🟡 Simulated'}
-              </span>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Data Source:</span>
+                <span className={`text-sm font-semibold ${
+                  dataSource.includes('Binance') ? 'text-green-500' : 
+                  dataSource === 'WEEX Live' ? 'text-green-500' : 'text-yellow-500'
+                }`}>
+                  {dataSource.includes('Binance') ? '🟢 ' + dataSource : 
+                   dataSource === 'WEEX Live' ? '🟢 WEEX Live' : '🟡 ' + dataSource}
+                </span>
+              </div>
+              {dataSource.includes('cache') && (
+                <span className="text-xs bg-blue-600 px-2 py-1 rounded">⚡ Cached</span>
+              )}
             </div>
           </div>
           
@@ -546,8 +795,11 @@ export default function Dashboard() {
 
       {/* Market Prices */}
       <div className="bg-gray-800 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-bold mb-4">Market Prices</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Market Prices</h2>
+          <span className="text-sm text-gray-400">{Object.keys(prices).length} Trading Pairs</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {Object.entries(prices).map(([symbol, data]) => (
             <div key={symbol} className="bg-gray-700 rounded-lg p-4">
               <div className="text-gray-400 text-sm mb-1">{symbol}</div>
@@ -565,7 +817,9 @@ export default function Dashboard() {
         <div className="bg-gray-800 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold">AI Trading Signal</h2>
-            {current_signal.ml_prediction && (
+            {loading ? (
+              <div className="h-5 w-24 bg-gray-700 rounded animate-pulse"></div>
+            ) : current_signal.ml_prediction && (
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
                 <span className="text-xs text-purple-400 font-semibold">ML Enhanced</span>
@@ -573,17 +827,49 @@ export default function Dashboard() {
             )}
           </div>
           
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-gray-400">Signal</span>
-              <span className={`px-4 py-2 rounded-lg font-bold ${
-                current_signal.signal === 'BUY' ? 'bg-green-600' :
-                current_signal.signal === 'SELL' ? 'bg-red-600' : 'bg-gray-600'
-              }`}>
-                {current_signal.signal}
-              </span>
+          {loading ? (
+            <div className="space-y-4 animate-pulse">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-16 bg-gray-700 rounded"></div>
+                <div className="h-10 w-24 bg-gray-700 rounded-lg"></div>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <div className="h-4 w-20 bg-gray-700 rounded"></div>
+                    <div className="h-4 w-12 bg-gray-700 rounded"></div>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2"></div>
+                </div>
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <div className="h-4 w-24 bg-gray-700 rounded"></div>
+                    <div className="h-4 w-12 bg-gray-700 rounded"></div>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2"></div>
+                </div>
+                <div className="flex justify-between">
+                  <div className="h-4 w-28 bg-gray-700 rounded"></div>
+                  <div className="h-4 w-12 bg-gray-700 rounded"></div>
+                </div>
+              </div>
+              <div className="text-center text-sm text-gray-500 mt-4">
+                Loading {selectedCoin} signal...
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Signal</span>
+                  <span className={`px-4 py-2 rounded-lg font-bold ${
+                    current_signal.signal === 'BUY' ? 'bg-green-600' :
+                    current_signal.signal === 'SELL' ? 'bg-red-600' : 'bg-gray-600'
+                  }`}>
+                    {current_signal.signal}
+                  </span>
+                </div>
+              </div>
 
           <div className="space-y-3">
             <div>
@@ -690,7 +976,7 @@ export default function Dashboard() {
               <span className="text-gray-400 text-sm">Select Coin (Binance Trading)</span>
               <span className="text-xs text-gray-500">{Object.keys(prices).length} pairs</span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-96 overflow-y-auto">
               {Object.entries(prices).map(([symbol, data]) => (
                 <button
                   key={symbol}
@@ -711,26 +997,26 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Trade Amount Selector */}
-          <div className="mt-4 p-4 bg-gray-700 rounded-lg">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-gray-400">Trade Amount</span>
-              <span className="text-xl font-bold text-blue-400">{tradePercentage}%</span>
-            </div>
-            
-            {/* Slider */}
-            <input
-              type="range"
-              min="10"
-              max="100"
-              step="5"
-              value={tradePercentage}
-              onChange={(e) => setTradePercentage(parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
-              style={{
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${tradePercentage}%, #4b5563 ${tradePercentage}%, #4b5563 100%)`
-              }}
-            />
+              {/* Trade Amount Selector */}
+              <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-gray-400">Trade Amount</span>
+                  <span className="text-xl font-bold text-blue-400">{tradePercentage}%</span>
+                </div>
+                
+                {/* Slider */}
+                <input
+                  type="range"
+                  min="10"
+                  max="100"
+                  step="5"
+                  value={tradePercentage}
+                  onChange={(e) => setTradePercentage(parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${tradePercentage}%, #4b5563 ${tradePercentage}%, #4b5563 100%)`
+                  }}
+                />
             
             {/* Preset Buttons */}
             <div className="flex gap-2 mt-3">
@@ -755,13 +1041,38 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Wallet Connection Status */}
+          {!account ? (
+            <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded-lg">
+              <div className="text-yellow-400 text-sm mb-2">⚠️ MetaMask Not Connected</div>
+              <div className="text-gray-300 text-xs mb-3">
+                Connect your wallet to execute trades on blockchain
+              </div>
+              <Link href="/wallet" className="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition">
+                Go to Wallet Page to Connect
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4 p-3 bg-green-900/30 border border-green-500 rounded-lg">
+              <div className="text-green-400 text-xs mb-1">✅ Wallet Connected</div>
+              <div className="text-gray-300 text-xs font-mono">
+                {account.slice(0, 6)}...{account.slice(-4)}
+              </div>
+              <div className="text-gray-400 text-xs mt-1">
+                Balance: {blockchainBalance.toFixed(2)} atUSDT
+              </div>
+            </div>
+          )}
+
           <button
-            onClick={() => executeTrade(selectedCoin)}
-            disabled={executing}
-            className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition"
-          >
-            {executing ? 'Executing...' : `Execute Trade - ${selectedCoin}`}
-          </button>
+                onClick={() => executeTrade(selectedCoin)}
+                disabled={executing || !account}
+                className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition"
+              >
+                {executing ? 'Executing...' : !account ? 'Connect Wallet First' : `Execute Trade - ${selectedCoin}`}
+              </button>
+            </>
+          )}
         </div>
 
         {/* Smart Contract & Oracle */}
@@ -845,6 +1156,14 @@ export default function Dashboard() {
           
           {tradeResult.success && tradeResult.trade ? (
             <div className="space-y-2 text-sm">
+              {tradeResult.trade.mode === 'SIMULATED' && (
+                <div className="mb-3 p-2 bg-yellow-900/30 border border-yellow-500 rounded">
+                  <div className="text-yellow-400 text-xs font-semibold">⚠️ SIMULATED TRADE</div>
+                  <div className="text-gray-300 text-xs mt-1">
+                    Blockchain unavailable. Trade recorded in database for testing.
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-400">Trade ID</span>
                 <span className="font-mono">{tradeResult.trade.trade_id}</span>
@@ -863,6 +1182,12 @@ export default function Dashboard() {
                 <span className="text-gray-400">Price</span>
                 <span>${tradeResult.trade.price?.toFixed(2)}</span>
               </div>
+              {tradeResult.trade.amount && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Amount</span>
+                  <span>{tradeResult.trade.amount.toFixed(2)} atUSDT</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-400">Confidence</span>
                 <span>{(tradeResult.trade.confidence * 100).toFixed(1)}%</span>

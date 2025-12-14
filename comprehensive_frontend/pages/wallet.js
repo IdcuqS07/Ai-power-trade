@@ -11,9 +11,41 @@ const BSC_TESTNET_PARAMS = {
   chainId: '0x61',
   chainName: 'BSC Testnet',
   nativeCurrency: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
-  rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545'],
+  rpcUrls: ['https://bsc-testnet.publicnode.com'],
   blockExplorerUrls: ['https://testnet.bscscan.com']
 }
+
+// Full contract ABI for faucet function
+const CONTRACT_ABI = [
+  {
+    "inputs": [],
+    "name": "claimFaucet",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "_address", "type": "address"}],
+    "name": "canClaimFaucet",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "_address", "type": "address"}],
+    "name": "timeUntilNextClaim",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
 
 export default function WalletPage() {
   const router = useRouter()
@@ -69,6 +101,8 @@ export default function WalletPage() {
       const accounts = await window.ethereum.request({ method: 'eth_accounts' })
       if (accounts.length > 0) {
         setAccount(accounts[0])
+        // Save to localStorage for cross-page persistence
+        localStorage.setItem('wallet_address', accounts[0])
         const chainId = await window.ethereum.request({ method: 'eth_chainId' })
         setChainId(chainId)
       }
@@ -87,6 +121,9 @@ export default function WalletPage() {
     try {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
       setAccount(accounts[0])
+      // Save to localStorage for cross-page persistence
+      localStorage.setItem('wallet_address', accounts[0])
+      console.log('Wallet connected and saved to localStorage:', accounts[0])
       
       const chainId = await window.ethereum.request({ method: 'eth_chainId' })
       setChainId(chainId)
@@ -98,8 +135,8 @@ export default function WalletPage() {
       // Auto-add atUSDT token to MetaMask
       await addTokenToMetaMask()
       
-      setOperationResult({ success: true, message: 'Wallet connected & atUSDT token added!' })
-      setTimeout(() => setOperationResult(null), 3000)
+      setOperationResult({ success: true, message: 'Wallet connected & atUSDT token added! You can now trade on Dashboard.' })
+      setTimeout(() => setOperationResult(null), 5000)
     } catch (error) {
       console.error('Connect wallet error:', error)
       setOperationResult({ success: false, message: error.message })
@@ -126,18 +163,71 @@ export default function WalletPage() {
     }
   }
 
-  const fetchBlockchainBalance = async () => {
+  const fetchBlockchainBalance = async (retryCount = 0) => {
     if (!account) return
     
     try {
-      const response = await axios.get(`${API_URL}/api/blockchain/balance/${account}`)
+      // Try to get balance from blockchain directly first
+      if (window.ethereum) {
+        const provider = new ethers.providers.Web3Provider(window.ethereum)
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider)
+        
+        // Add timeout to prevent hanging
+        const balancePromise = contract.balanceOf(account)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('RPC timeout')), 5000)
+        )
+        
+        const balance = await Promise.race([balancePromise, timeoutPromise])
+        const balanceFormatted = parseFloat(ethers.utils.formatEther(balance))
+        setTokenBalance(balanceFormatted)
+        
+        // Try to get claim status (with timeout)
+        try {
+          const canClaimPromise = contract.canClaimFaucet(account)
+          const canClaimNow = await Promise.race([
+            canClaimPromise, 
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ])
+          setCanClaim(canClaimNow)
+          
+          const cooldownPromise = contract.timeUntilNextClaim(account)
+          const cooldownSec = await Promise.race([
+            cooldownPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ])
+          setCooldown(parseInt(cooldownSec.toString()))
+        } catch (claimError) {
+          // Claim status failed, use defaults
+          console.log('Could not fetch claim status, using defaults')
+        }
+        
+        console.log('Balance updated:', balanceFormatted)
+        return // Success, exit
+      }
+    } catch (error) {
+      console.log('RPC error (normal on BSC Testnet):', error.message)
+      
+      // Retry once if first attempt
+      if (retryCount === 0) {
+        console.log('Retrying balance fetch...')
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        return fetchBlockchainBalance(1)
+      }
+    }
+    
+    // Fallback: Try backend API
+    try {
+      const response = await axios.get(`${API_URL}/api/blockchain/balance/${account}`, { timeout: 5000 })
       if (response.data.success) {
         setTokenBalance(response.data.data.balance)
         setCanClaim(response.data.data.can_claim_faucet)
         setCooldown(response.data.data.cooldown_seconds)
+        console.log('Balance from backend API')
       }
-    } catch (error) {
-      console.error('Fetch blockchain balance error:', error)
+    } catch (backendError) {
+      console.log('Backend API also unavailable, keeping cached balance')
+      // Keep existing balance, don't reset to 0
     }
   }
 
@@ -147,26 +237,93 @@ export default function WalletPage() {
       return
     }
 
+    // Check if on correct network
+    if (chainId !== BSC_TESTNET_PARAMS.chainId) {
+      setOperationResult({ success: false, message: 'Please switch to BSC Testnet!' })
+      await switchToBSCTestnet()
+      return
+    }
+
     setClaiming(true)
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       const signer = provider.getSigner()
       
-      const abi = ['function claimFaucet() public returns (bool)']
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer)
+      // Check BNB balance for gas
+      const bnbBalance = await provider.getBalance(account)
+      const bnbBalanceEth = ethers.utils.formatEther(bnbBalance)
       
-      const tx = await contract.claimFaucet()
-      setOperationResult({ success: true, message: 'Transaction sent! Waiting for confirmation...' })
+      if (parseFloat(bnbBalanceEth) < 0.001) {
+        setOperationResult({ 
+          success: false, 
+          message: `Insufficient tBNB for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} tBNB. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart` 
+        })
+        setClaiming(false)
+        return
+      }
       
-      await tx.wait()
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
       
-      setOperationResult({ success: true, message: '🎉 Successfully claimed 100 atUSDT!' })
-      fetchBlockchainBalance()
+      // Check if can claim
+      const canClaim = await contract.canClaimFaucet(account)
+      if (!canClaim) {
+        const cooldownSeconds = await contract.timeUntilNextClaim(account)
+        const hours = Math.floor(cooldownSeconds / 3600)
+        const minutes = Math.floor((cooldownSeconds % 3600) / 60)
+        setOperationResult({ 
+          success: false, 
+          message: `Please wait ${hours}h ${minutes}m before claiming again` 
+        })
+        setClaiming(false)
+        return
+      }
       
-      setTimeout(() => setOperationResult(null), 5000)
+      setOperationResult({ success: true, message: 'Sending transaction...' })
+      
+      // Estimate gas first
+      const gasEstimate = await contract.estimateGas.claimFaucet()
+      console.log('Gas estimate:', gasEstimate.toString())
+      
+      // Send transaction with extra gas buffer
+      const tx = await contract.claimFaucet({
+        gasLimit: gasEstimate.mul(120).div(100) // 20% buffer
+      })
+      
+      setOperationResult({ success: true, message: `Transaction sent! Hash: ${tx.hash.slice(0, 10)}... Waiting for confirmation...` })
+      console.log('Transaction hash:', tx.hash)
+      
+      const receipt = await tx.wait()
+      console.log('Transaction confirmed:', receipt)
+      
+      if (receipt.status === 1) {
+        setOperationResult({ success: true, message: '🎉 Successfully claimed 100 atUSDT! Check your MetaMask.' })
+        // Refresh balance
+        setTimeout(() => {
+          fetchBlockchainBalance()
+        }, 2000)
+      } else {
+        setOperationResult({ success: false, message: 'Transaction failed. Please try again.' })
+      }
+      
+      setTimeout(() => setOperationResult(null), 8000)
     } catch (error) {
       console.error('Claim faucet error:', error)
-      setOperationResult({ success: false, message: error.message || 'Claim failed' })
+      
+      let errorMessage = 'Claim failed: '
+      
+      if (error.code === 4001) {
+        errorMessage += 'Transaction rejected by user'
+      } else if (error.code === -32603) {
+        errorMessage += 'Internal error. Please check your tBNB balance for gas.'
+      } else if (error.message?.includes('insufficient funds')) {
+        errorMessage += 'Insufficient tBNB for gas. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart'
+      } else if (error.message?.includes('Cooldown not finished')) {
+        errorMessage += 'Please wait 24 hours between claims'
+      } else {
+        errorMessage += error.message || error.reason || 'Unknown error'
+      }
+      
+      setOperationResult({ success: false, message: errorMessage })
     }
     setClaiming(false)
   }
@@ -328,6 +485,11 @@ export default function WalletPage() {
           <div>
             <h3 className="text-2xl font-bold mb-2">🎁 BSC Testnet Faucet</h3>
             <p className="text-purple-200">Claim free atUSDT tokens for testing</p>
+            {!account && (
+              <p className="text-purple-100 text-sm mt-2">
+                ⚠️ You need tBNB for gas fees. Get free tBNB first!
+              </p>
+            )}
           </div>
           {account && (
             <div className="text-right">
@@ -371,20 +533,29 @@ export default function WalletPage() {
               </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={addTokenToMetaMask}
-                className="flex-1 bg-purple-700 hover:bg-purple-600 py-2 rounded-lg text-sm transition"
+                className="bg-purple-700 hover:bg-purple-600 py-2 rounded-lg text-sm transition"
               >
                 Add to MetaMask
               </button>
               <a
+                href="https://testnet.bnbchain.org/faucet-smart"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-yellow-600 hover:bg-yellow-500 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1 font-semibold"
+              >
+                Get tBNB
+                <ExternalLink size={14} />
+              </a>
+              <a
                 href={`https://testnet.bscscan.com/address/${CONTRACT_ADDRESS}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 bg-purple-700 hover:bg-purple-600 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1"
+                className="bg-purple-700 hover:bg-purple-600 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1"
               >
-                View on BscScan
+                View Contract
                 <ExternalLink size={14} />
               </a>
             </div>
