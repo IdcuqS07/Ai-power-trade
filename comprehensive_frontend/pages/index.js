@@ -42,8 +42,10 @@ export default function Dashboard() {
 
   // Logout function
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    }
     setUser(null)
   }
 
@@ -179,9 +181,15 @@ export default function Dashboard() {
       if (!mounted) return
       
       // Check if user is logged in
-      const storedUser = localStorage.getItem('user')
-      if (storedUser) {
-        setUser(JSON.parse(storedUser))
+      if (typeof window !== 'undefined') {
+        const storedUser = localStorage.getItem('user')
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser))
+          } catch (e) {
+            console.error('Error parsing user data:', e)
+          }
+        }
       }
       
       // Set timeout to ensure loading state is cleared
