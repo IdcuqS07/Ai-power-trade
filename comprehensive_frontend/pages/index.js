@@ -68,6 +68,8 @@ export default function Dashboard() {
 
   // Define functions before useEffect
   const addTokenToMetaMask = async () => {
+    if (typeof window === 'undefined' || !window.ethereum) return
+    
     try {
       await window.ethereum.request({
         method: 'wallet_watchAsset',
@@ -88,6 +90,8 @@ export default function Dashboard() {
   }
 
   const fetchBlockchainBalance = useCallback(async (address) => {
+    if (typeof window === 'undefined' || !window.ethereum) return
+    
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider)
@@ -270,6 +274,12 @@ export default function Dashboard() {
 
     setExecuting(true)
     setTradeResult(null)
+    
+    if (typeof window === 'undefined' || !window.ethereum) {
+      setTradeResult({ success: false, message: 'MetaMask not available' })
+      setExecuting(false)
+      return
+    }
     
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum)
