@@ -27,7 +27,24 @@ export default function Dashboard() {
       symbol: 'BTC',
       price: 0,
       change_24h: 0
-    }
+    },
+    prices: {},
+    current_signal: {},
+    portfolio: {
+      total_value: 10000,
+      profit_loss: 0,
+      profit_loss_pct: 0,
+      positions_count: 0
+    },
+    performance: {
+      total_trades: 0,
+      winning_trades: 0,
+      losing_trades: 0,
+      win_rate: 0,
+      total_profit: 0
+    },
+    smart_contract: {},
+    oracle: {}
   })
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
@@ -150,7 +167,24 @@ export default function Dashboard() {
           symbol: selectedCoin,
           price: 0,
           change_24h: 0
-        }
+        },
+        prices: {},
+        current_signal: {},
+        portfolio: {
+          total_value: 10000,
+          profit_loss: 0,
+          profit_loss_pct: 0,
+          positions_count: 0
+        },
+        performance: {
+          total_trades: 0,
+          winning_trades: 0,
+          losing_trades: 0,
+          win_rate: 0,
+          total_profit: 0
+        },
+        smart_contract: {},
+        oracle: {}
       })
       setDataSource('Demo Mode - Backend Offline')
       setLoading(false)
