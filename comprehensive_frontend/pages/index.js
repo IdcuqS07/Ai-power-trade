@@ -12,7 +12,23 @@ const CONTRACT_ABI = [
 ]
 
 export default function Dashboard() {
-  const [dashboardData, setDashboardData] = useState(null)
+  const [dashboardData, setDashboardData] = useState({
+    current_price: 0,
+    prediction: 0,
+    confidence: 0,
+    recommendation: 'HOLD',
+    balance: 10000,
+    total_trades: 0,
+    win_rate: 0,
+    total_profit: 0,
+    active_position: null,
+    recent_trades: [],
+    market_data: {
+      symbol: 'BTC',
+      price: 0,
+      change_24h: 0
+    }
+  })
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
   const [tradeResult, setTradeResult] = useState(null)
@@ -168,7 +184,16 @@ export default function Dashboard() {
         setUser(JSON.parse(storedUser))
       }
       
+      // Set timeout to ensure loading state is cleared
+      const loadingTimeout = setTimeout(() => {
+        if (mounted) {
+          setLoading(false)
+          setDataSource('Demo Mode')
+        }
+      }, 6000)
+      
       await fetchDashboard()
+      clearTimeout(loadingTimeout)
       
       if (!mounted) return
       
