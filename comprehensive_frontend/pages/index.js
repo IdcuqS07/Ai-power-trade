@@ -332,7 +332,14 @@ export default function Dashboard() {
     )
   }
 
-  const { prices, current_signal, portfolio, performance, smart_contract, oracle } = dashboardData
+  const { 
+    prices = {}, 
+    current_signal = {}, 
+    portfolio = { total_value: 10000, profit_loss: 0, profit_loss_pct: 0, positions_count: 0 }, 
+    performance = { total_trades: 0, winning_trades: 0, losing_trades: 0, win_rate: 0, total_profit: 0 }, 
+    smart_contract = {}, 
+    oracle = {} 
+  } = dashboardData || {}
   
   // Use full performance if available, otherwise use quick stats from dashboard
   const displayPerformance = fullPerformance || performance
@@ -433,19 +440,19 @@ export default function Dashboard() {
             <span className="text-gray-400">Total Value</span>
             <DollarSign className="text-green-500" size={20} />
           </div>
-          <div className="text-2xl font-bold">${portfolio.total_value.toFixed(2)}</div>
+          <div className="text-2xl font-bold">${(portfolio?.total_value || 10000).toFixed(2)}</div>
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400">P&L</span>
-            {portfolio.profit_loss >= 0 ? 
+            {(portfolio?.profit_loss || 0) >= 0 ? 
               <TrendingUp className="text-green-500" size={20} /> : 
               <TrendingDown className="text-red-500" size={20} />
             }
           </div>
-          <div className={`text-2xl font-bold ${portfolio.profit_loss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            ${portfolio.profit_loss.toFixed(2)} ({portfolio.profit_loss_pct.toFixed(2)}%)
+          <div className={`text-2xl font-bold ${(portfolio?.profit_loss || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            ${(portfolio?.profit_loss || 0).toFixed(2)} ({(portfolio?.profit_loss_pct || 0).toFixed(2)}%)
           </div>
         </div>
 
@@ -463,7 +470,7 @@ export default function Dashboard() {
             <span className="text-gray-400">Positions</span>
             <Activity className="text-purple-500" size={20} />
           </div>
-          <div className="text-2xl font-bold">{portfolio.positions_count}</div>
+          <div className="text-2xl font-bold">{portfolio?.positions_count || 0}</div>
         </div>
 
         {account && (
