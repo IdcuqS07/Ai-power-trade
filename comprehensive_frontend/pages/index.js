@@ -43,7 +43,13 @@ export default function Dashboard() {
       win_rate: 0,
       total_profit: 0
     },
-    smart_contract: {},
+    smart_contract: {
+      risk_limits: {
+        max_position_size_pct: 10,
+        max_daily_loss_pct: 5,
+        min_confidence: 0.7
+      }
+    },
     oracle: {}
   })
   const [loading, setLoading] = useState(true)
@@ -187,7 +193,13 @@ export default function Dashboard() {
           win_rate: 0,
           total_profit: 0
         },
-        smart_contract: {},
+        smart_contract: {
+          risk_limits: {
+            max_position_size_pct: 10,
+            max_daily_loss_pct: 5,
+            min_confidence: 0.7
+          }
+        },
         oracle: {}
       })
       setDataSource('Demo Mode - Backend Offline')
@@ -347,7 +359,7 @@ export default function Dashboard() {
     current_signal = {}, 
     portfolio = { total_value: 10000, profit_loss: 0, profit_loss_pct: 0, positions_count: 0 }, 
     performance = { total_trades: 0, winning_trades: 0, losing_trades: 0, win_rate: 0, total_profit: 0 }, 
-    smart_contract = {}, 
+    smart_contract = { risk_limits: { max_position_size_pct: 10, max_daily_loss_pct: 5, min_confidence: 0.7 } }, 
     oracle = {} 
   } = dashboardData || {}
   
@@ -747,15 +759,15 @@ export default function Dashboard() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Max Position</span>
-                  <span>{smart_contract.risk_limits.max_position_size_pct}%</span>
+                  <span>{smart_contract?.risk_limits?.max_position_size_pct || 10}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Max Daily Loss</span>
-                  <span>{smart_contract.risk_limits.max_daily_loss_pct}%</span>
+                  <span>{smart_contract?.risk_limits?.max_daily_loss_pct || 5}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Min Confidence</span>
-                  <span>{(smart_contract.risk_limits.min_confidence * 100).toFixed(0)}%</span>
+                  <span>{((smart_contract?.risk_limits?.min_confidence || 0.7) * 100).toFixed(0)}%</span>
                 </div>
               </div>
             </div>
