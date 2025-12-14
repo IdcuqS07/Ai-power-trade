@@ -332,7 +332,7 @@ export default function WalletPage() {
           {account && (
             <div className="text-right">
               <div className="text-sm text-purple-200">Your Balance</div>
-              <div className="text-3xl font-bold">{tokenBalance.toFixed(2)} atUSDT</div>
+              <div className="text-3xl font-bold">{(tokenBalance || 0).toFixed(2)} atUSDT</div>
             </div>
           )}
         </div>
@@ -399,7 +399,7 @@ export default function WalletPage() {
             <span className="text-blue-200">Total Value</span>
             <DollarSign className="text-blue-200" size={24} />
           </div>
-          <div className="text-3xl font-bold mb-1">${wallet.total_value_usdt.toFixed(2)}</div>
+          <div className="text-3xl font-bold mb-1">${(wallet?.total_value_usdt || wallet?.total_balance_usd || 0).toFixed(2)}</div>
           <div className="text-sm text-blue-200">Platform Balance</div>
         </div>
 
@@ -408,7 +408,7 @@ export default function WalletPage() {
             <span className="text-green-200">Available Balance</span>
             <TrendingUp className="text-green-200" size={24} />
           </div>
-          <div className="text-3xl font-bold mb-1">${wallet.available_balance.toFixed(2)}</div>
+          <div className="text-3xl font-bold mb-1">${(wallet?.available_balance || 0).toFixed(2)}</div>
           <div className="text-sm text-green-200">Ready to Trade</div>
         </div>
 
@@ -417,7 +417,7 @@ export default function WalletPage() {
             <span className="text-yellow-200">Locked Balance</span>
             <History className="text-yellow-200" size={24} />
           </div>
-          <div className="text-3xl font-bold mb-1">${wallet.locked_balance.toFixed(2)}</div>
+          <div className="text-3xl font-bold mb-1">${(wallet?.locked_balance || 0).toFixed(2)}</div>
           <div className="text-sm text-yellow-200">In Active Positions</div>
         </div>
       </div>
@@ -473,11 +473,11 @@ export default function WalletPage() {
                       <span className="font-semibold">{balance.currency}</span>
                     </div>
                   </td>
-                  <td className="text-right py-4 px-4 font-mono">{balance.balance.toFixed(6)}</td>
-                  <td className="text-right py-4 px-4 font-mono text-yellow-500">{balance.locked.toFixed(6)}</td>
-                  <td className="text-right py-4 px-4 font-mono text-green-500">{balance.available.toFixed(6)}</td>
-                  <td className="text-right py-4 px-4 font-mono">${balance.price_usdt.toFixed(2)}</td>
-                  <td className="text-right py-4 px-4 font-mono font-bold">${balance.value_usdt.toFixed(2)}</td>
+                  <td className="text-right py-4 px-4 font-mono">{(balance?.balance || 0).toFixed(6)}</td>
+                  <td className="text-right py-4 px-4 font-mono text-yellow-500">{(balance?.locked || 0).toFixed(6)}</td>
+                  <td className="text-right py-4 px-4 font-mono text-green-500">{(balance?.available || 0).toFixed(6)}</td>
+                  <td className="text-right py-4 px-4 font-mono">${(balance?.price_usdt || balance?.usd_value / balance?.balance || 0).toFixed(2)}</td>
+                  <td className="text-right py-4 px-4 font-mono font-bold">${(balance?.value_usdt || balance?.usd_value || 0).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
