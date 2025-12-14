@@ -50,3 +50,4 @@ blockchain/.env
 *.tmp
 *.bak
 *.cache
+.vercel
