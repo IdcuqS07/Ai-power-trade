@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Contract - executeTrade</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+</head>
+<body>
+    <h1>Test AITradeUSDT Contract</h1>
+    
+    <div id="status">Loading...</div>
+    
+    <button onclick="connectWallet()">1. Connect Wallet</button>
+    <button onclick="checkBalance()">2. Check Balance</button>
+    <button onclick="testTrade()">3. Test Trade</button>
+    
+    <div id="output" style="margin-top: 20px; padding: 10px; background: #f0f0f0; font-family: monospace; white-space: pre-wrap;"></div>
+
+    <script>
+        const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33';
+        
+        // Full ABI from deployment.json
+        const CONTRACT_ABI = [
+            {
+                "inputs": [
+                    {"internalType": "string", "name": "_symbol", "type": "string"},
+                    {"internalType": "string", "name": "_tradeType", "type": "string"},
+                    {"internalType": "uint256", "name": "_amount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_price", "type": "uint256"}
+                ],
+                "name": "executeTrade",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+        
+        let provider, signer, contract, account;
+        
+        function log(message) {
+            const output = document.getElementById('output');
+            output.textContent += message + '\n';
+            console.log(message);
+        }
+        
+        async function connectWallet() {
+            try {
+                if (!window.ethereum) {
+                    log('ERROR: MetaMask not found!');
+                    return;
+                }
+                
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                account = await signer.getAddress();
+                contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+                
+                const network = await provider.getNetwork();
+                log('✅ Connected!');
+                log('Account: ' + account);
+                log('Network: ' + network.name + ' (Chain ID: ' + network.chainId + ')');
+                
+                if (network.chainId !== 97) {
+                    log('⚠️  WARNING: Not on BSC Testnet! Please switch to Chain ID 97');
+                }
+                
+                document.getElementById('status').textContent = 'Connected: ' + account.slice(0, 6) + '...' + account.slice(-4);
+            } catch (error) {
+                log('ERROR connecting: ' + error.message);
+            }
+        }
+        
+        async function checkBalance() {
+            try {
+                if (!contract) {
+                    log('ERROR: Connect wallet first!');
+                    return;
+                }
+                
+                log('\n--- Checking Balance ---');
+                
+                // Check tBNB
+                const bnbBalance = await provider.getBalance(account);
+                const bnbEth = ethers.utils.formatEther(bnbBalance);
+                log('tBNB Balance: ' + bnbEth);
+                
+                // Check atUSDT
+                const tokenBalance = await contract.balanceOf(account);
+                const tokenEth = ethers.utils.formatEther(tokenBalance);
+                log('atUSDT Balance: ' + tokenEth);
+                
+                if (parseFloat(bnbEth) < 0.001) {
+                    log('⚠️  WARNING: Low tBNB! Get more from faucet');
+                }
+                
+                if (parseFloat(tokenEth) < 1) {
+                    log('⚠️  WARNING: Low atUSDT! Claim from faucet');
+                }
+            } catch (error) {
+                log('ERROR checking balance: ' + error.message);
+            }
+        }
+        
+        async function testTrade() {
+            try {
+                if (!contract) {
+                    log('ERROR: Connect wallet first!');
+                    return;
+                }
+                
+                log('\n--- Testing Trade ---');
+                
+                // Test parameters
+                const symbol = "BTC";
+                const tradeType = "BUY";
+                const amount = ethers.utils.parseEther("1"); // 1 atUSDT
+                const price = 5000000; // $50,000.00 * 100
+                
+                log('Parameters:');
+                log('  Symbol: ' + symbol);
+                log('  Type: ' + tradeType);
+                log('  Amount: ' + ethers.utils.formatEther(amount) + ' atUSDT');
+                log('  Price: ' + (price / 100));
+                
+                // Try to estimate gas first
+                log('\nEstimating gas...');
+                try {
+                    const gasEstimate = await contract.estimateGas.executeTrade(
+                        symbol,
+                        tradeType,
+                        amount,
+                        price
+                    );
+                    log('✅ Gas estimate: ' + gasEstimate.toString());
+                    
+                    // If gas estimation succeeds, try actual transaction
+                    log('\nSending transaction...');
+                    const tx = await contract.executeTrade(
+                        symbol,
+                        tradeType,
+                        amount,
+                        price,
+                        {
+                            gasLimit: gasEstimate.mul(120).div(100)
+                        }
+                    );
+                    
+                    log('✅ Transaction sent!');
+                    log('TX Hash: ' + tx.hash);
+                    log('Waiting for confirmation...');
+                    
+                    const receipt = await tx.wait();
+                    log('✅ Transaction confirmed!');
+                    log('Block: ' + receipt.blockNumber);
+                    log('Gas used: ' + receipt.gasUsed.toString());
+                    
+                } catch (estimateError) {
+                    log('❌ Gas estimation failed!');
+                    log('Error: ' + estimateError.message);
+                    
+                    if (estimateError.reason) {
+                        log('Reason: ' + estimateError.reason);
+                    }
+                    
+                    if (estimateError.error) {
+                        log('Error details: ' + JSON.stringify(estimateError.error, null, 2));
+                    }
+                    
+                    // Try to decode error
+                    if (estimateError.data) {
+                        log('Error data: ' + estimateError.data);
+                    }
+                }
+                
+            } catch (error) {
+                log('❌ ERROR: ' + error.message);
+                if (error.reason) {
+                    log('Reason: ' + error.reason);
+                }
+                if (error.code) {
+                    log('Code: ' + error.code);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
