@@ -260,13 +260,13 @@ export default function ProfilePage() {
               </div>
               <div className="flex items-center justify-between bg-gray-700 rounded-lg px-4 py-3">
                 <span>Notifications</span>
-                <span className={profile.preferences.notifications ? 'text-green-500' : 'text-gray-500'}>
-                  {profile.preferences.notifications ? 'Enabled' : 'Disabled'}
+                <span className={profile.preferences?.notifications ? 'text-green-500' : 'text-gray-500'}>
+                  {profile.preferences?.notifications ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
               <div className="flex items-center justify-between bg-gray-700 rounded-lg px-4 py-3">
                 <span>Max Daily Trades</span>
-                <span className="font-semibold">{profile.preferences.max_daily_trades}</span>
+                <span className="font-semibold">{profile.preferences?.max_daily_trades || "N/A"}</span>
               </div>
             </div>
           </div>
