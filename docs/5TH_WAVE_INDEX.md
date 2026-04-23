@@ -11,7 +11,7 @@ Complete guide to Enhanced AI Predictions implementation.
    - Quick test commands
    - Common issues
 
-2. **[Installation Script](./install-5th-wave.sh)**
+2. **[Installation Script](../install-5th-wave.sh)**
    - Automated installation
    - Dependency verification
    - One-command setup
@@ -55,7 +55,7 @@ Complete guide to Enhanced AI Predictions implementation.
 ## 🧪 Testing
 
 ### Test Suite
-**[Test Enhanced AI](./comprehensive_backend/test_enhanced_ai.py)**
+**[Test Enhanced AI](../comprehensive_backend/test_enhanced_ai.py)**
 - Automated test suite
 - 8 comprehensive tests
 - Model status verification
@@ -79,26 +79,26 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 ### Backend
 
 #### Core AI Modules
-1. **[lstm_predictor.py](./comprehensive_backend/lstm_predictor.py)**
+1. **[lstm_predictor.py](../comprehensive_backend/lstm_predictor.py)**
    - LSTM Neural Network implementation
    - TensorFlow/Keras model
    - Time series prediction
    - Model training and persistence
 
-2. **[coingecko_api.py](./comprehensive_backend/coingecko_api.py)**
+2. **[coingecko_api.py](../comprehensive_backend/coingecko_api.py)**
    - CoinGecko API client
    - Market data fetching
    - Sentiment analysis
    - Global market stats
    - Trending coins
 
-3. **[enhanced_predictor.py](./comprehensive_backend/enhanced_predictor.py)**
+3. **[enhanced_predictor.py](../comprehensive_backend/enhanced_predictor.py)**
    - Multi-model ensemble
    - Weighted prediction system
    - Confidence scoring
    - Color coding logic
 
-4. **[main.py](./comprehensive_backend/main.py)** (updated)
+4. **[main.py](../comprehensive_backend/main.py)** (updated)
    - New API endpoints
    - Enhanced prediction routes
    - Model status endpoints
@@ -106,19 +106,19 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 ### Frontend
 
 #### Components
-1. **[ConfidenceIndicator.js](./comprehensive_frontend/components/ConfidenceIndicator.js)**
+1. **[ConfidenceIndicator.js](../comprehensive_frontend/components/ConfidenceIndicator.js)**
    - Color-coded progress bar
    - Animated confidence badge
    - Size variants
 
-2. **[EnhancedPredictionCard.js](./comprehensive_frontend/components/EnhancedPredictionCard.js)**
+2. **[EnhancedPredictionCard.js](../comprehensive_frontend/components/EnhancedPredictionCard.js)**
    - Combined prediction display
    - Model breakdown
    - Market data integration
    - Technical indicators
 
 #### Pages
-1. **[ai-predictions.js](./comprehensive_frontend/pages/ai-predictions.js)**
+1. **[ai-predictions.js](../comprehensive_frontend/pages/ai-predictions.js)**
    - Enhanced AI predictions page
    - Global market dashboard
    - Model status monitoring
@@ -165,7 +165,7 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 
 #### Get Started Quickly
 → [Quick Start Guide](./QUICK_START_5TH_WAVE.md)
-→ [Installation Script](./install-5th-wave.sh)
+→ [Installation Script](../install-5th-wave.sh)
 
 #### Understand the Implementation
 → [5th Wave Implementation](./5TH_WAVE_IMPLEMENTATION.md)
@@ -178,15 +178,15 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 → [Confidence Visualization Guide](./CONFIDENCE_VISUALIZATION_GUIDE.md)
 
 #### Test the Features
-→ [Test Enhanced AI](./comprehensive_backend/test_enhanced_ai.py)
+→ [Test Enhanced AI](../comprehensive_backend/test_enhanced_ai.py)
 
 #### Understand the Code
-→ [lstm_predictor.py](./comprehensive_backend/lstm_predictor.py)
-→ [enhanced_predictor.py](./comprehensive_backend/enhanced_predictor.py)
+→ [lstm_predictor.py](../comprehensive_backend/lstm_predictor.py)
+→ [enhanced_predictor.py](../comprehensive_backend/enhanced_predictor.py)
 
 #### Customize the UI
-→ [ConfidenceIndicator.js](./comprehensive_frontend/components/ConfidenceIndicator.js)
-→ [EnhancedPredictionCard.js](./comprehensive_frontend/components/EnhancedPredictionCard.js)
+→ [ConfidenceIndicator.js](../comprehensive_frontend/components/ConfidenceIndicator.js)
+→ [EnhancedPredictionCard.js](../comprehensive_frontend/components/EnhancedPredictionCard.js)
 
 ## 📚 Reading Order
 
@@ -268,7 +268,7 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 ### Code Issues
 - Check [5th Wave Implementation](./5TH_WAVE_IMPLEMENTATION.md)
 - Review code comments
-- Run [test_enhanced_ai.py](./comprehensive_backend/test_enhanced_ai.py)
+- Run [test_enhanced_ai.py](../comprehensive_backend/test_enhanced_ai.py)
 
 ### Feature Requests
 - Review [Before & After Comparison](./BEFORE_AFTER_COMPARISON.md)
@@ -324,8 +324,8 @@ curl -X POST "http://localhost:8000/api/ai/lstm/train?symbol=BTC&epochs=50"
 ## 🚀 Next Steps
 
 1. ✅ Read [Quick Start Guide](./QUICK_START_5TH_WAVE.md)
-2. ✅ Run [Installation Script](./install-5th-wave.sh)
-3. ✅ Test with [test_enhanced_ai.py](./comprehensive_backend/test_enhanced_ai.py)
+2. ✅ Run [Installation Script](../install-5th-wave.sh)
+3. ✅ Test with [test_enhanced_ai.py](../comprehensive_backend/test_enhanced_ai.py)
 4. ✅ Review [Confidence Guide](./CONFIDENCE_VISUALIZATION_GUIDE.md)
 5. ✅ Start trading with enhanced AI!
 

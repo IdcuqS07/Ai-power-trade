@@ -51,8 +51,8 @@ AI-powered cryptocurrency trading platform built on **Polygon Amoy Testnet**.
 
 ```bash
 # Clone the repository
-git clone https://github.com/0xCryptotech/ai-power-trade-polygon.git
-cd ai-power-trade-polygon
+git clone https://github.com/IdcuqS07/Ai-power-trade.git
+cd Ai-power-trade
 
 # Install frontend dependencies
 cd comprehensive_frontend
@@ -177,8 +177,8 @@ http://localhost:3000/ai-predictions
 ```
 
 ### Documentation
-- [5th Wave Implementation Guide](./5TH_WAVE_IMPLEMENTATION.md)
-- [Quick Start Guide](./QUICK_START_5TH_WAVE.md)
+- [5th Wave Implementation Guide](./docs/5TH_WAVE_IMPLEMENTATION.md)
+- [Quick Start Guide](./docs/QUICK_START_5TH_WAVE.md)
 - [Test Enhanced AI](./comprehensive_backend/test_enhanced_ai.py)
 
 ### Key Features
@@ -216,12 +216,13 @@ GET /api/ai/model-status
 
 ## 📖 Documentation
 
-- [5th Wave: Enhanced AI](./5TH_WAVE_IMPLEMENTATION.md) ⭐ NEW!
-- [Quick Start: 5th Wave](./QUICK_START_5TH_WAVE.md) ⭐ NEW!
-- [API Documentation](./API_DOCUMENTATION.md)
+- [Documentation Hub](./docs/README.md)
+- [5th Wave: Enhanced AI](./docs/5TH_WAVE_IMPLEMENTATION.md) ⭐ NEW!
+- [Quick Start: 5th Wave](./docs/QUICK_START_5TH_WAVE.md) ⭐ NEW!
+- [API Documentation](./docs/API_DOCUMENTATION.md)
 - [Smart Contract Guide](./blockchain/README.md)
-- [Deployment Guide](./DEPLOYMENT_GUIDE.md)
-- [Testing Guide](./TESTING_GUIDE.md)
+- [Deployment Guide](./docs/DEPLOYMENT_GUIDE.md)
+- [Testing Guide](./docs/QUICK_TEST_GUIDE.md)
 
 ## 🤝 Contributing
 
@@ -240,8 +241,8 @@ MIT License - see LICENSE file for details
 
 ## 📞 Support
 
-- GitHub Issues: [Report bugs](https://github.com/0xCryptotech/ai-power-trade-polygon/issues)
-- Documentation: [Read the docs](./docs/)
+- GitHub Issues: [Report bugs](https://github.com/IdcuqS07/Ai-power-trade/issues)
+- Documentation: [Read the docs](./docs/README.md)
 - Community: [Join our Discord](#)
 
 ## 🎯 Roadmap
