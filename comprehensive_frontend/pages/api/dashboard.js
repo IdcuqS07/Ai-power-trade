@@ -1,6 +1,6 @@
 // API Proxy for dashboard
 export default async function handler(req, res) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com'
   const { symbol } = req.query
   
   try {

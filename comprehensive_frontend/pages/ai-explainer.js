@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+import { cache } from '../utils/cache'
 import Link from 'next/link'
 import { Brain, TrendingUp, TrendingDown, Activity, AlertCircle, CheckCircle, BarChart3, Lightbulb, Target, Shield } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com'
 
 export default function AIExplainer() {
   const [selectedCoin, setSelectedCoin] = useState('BTC')
@@ -66,6 +67,21 @@ export default function AIExplainer() {
   }
 
   const fetchExplanation = async (symbol) => {
+    // Check cache first
+    const cacheKey = `ai_explain_${symbol}`;
+    const cached = cache.get(cacheKey);
+    
+    if (cached) {
+      console.log(`📦 AI Explainer: Loading ${symbol} from cache`);
+      setExplanation(cached.explanation);
+      if (cached.prices) {
+        setPrices(cached.prices);
+      }
+      setLoading(false);
+      return;
+    }
+    
+    console.log(`🔄 AI Explainer: Fetching ${symbol} explanation...`);
     setLoading(true)
     try {
       // Parallel fetch: prices and explanation at the same time for faster loading
@@ -74,11 +90,14 @@ export default function AIExplainer() {
         fetch(`/api/ai/explain/${symbol}`).catch(e => null)
       ])
       
+      // Declare formattedPrices outside to avoid scope issues
+      let formattedPrices = {};
+      
       // Update prices if available
       if (pricesResponse && pricesResponse.ok) {
         const pricesData = await pricesResponse.json()
         if (pricesData.success && pricesData.data) {
-          const formattedPrices = {}
+          formattedPrices = {}
           Object.entries(pricesData.data).forEach(([sym, info]) => {
             formattedPrices[sym] = {
               price: info.price,
@@ -94,6 +113,13 @@ export default function AIExplainer() {
         const data = await explanationResponse.json()
         if (data.success) {
           setExplanation(data.data)
+          
+          // Cache the explanation for 60 seconds
+          cache.set(`ai_explain_${symbol}`, {
+            explanation: data.data,
+            prices: Object.keys(formattedPrices).length > 0 ? formattedPrices : prices
+          }, 60);
+          console.log(`✅ AI Explainer: ${symbol} cached for 60 seconds`);
         }
       } else {
         // Set demo explanation if API fails

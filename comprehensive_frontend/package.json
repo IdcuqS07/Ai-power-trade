@@ -1,5 +1,5 @@
 {
-  "name": "ai-trading-comprehensive",
+  "name": "ai-power-trade-polygon-v2",
   "version": "3.0.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,8 @@
     "next": "14.0.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "recharts": "^2.8.0"
+    "recharts": "^2.8.0",
+    "web3": "^4.16.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.16",

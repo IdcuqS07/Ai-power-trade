@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { cache } from '../utils/cache';
 import axios from 'axios'
 import Link from 'next/link'
 import { ethers } from 'ethers'
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User, Brain } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com'
 const CONTRACT_ADDRESS = '0xA2E0F4A542b700f437c27Ce28B31499023d9a53A'
 
 // Use proper ABI from contract
@@ -183,6 +184,17 @@ export default function Dashboard() {
     let binancePrices = {}
     try {
       console.log('→ Fetching Binance prices from proxy API...')
+      // Check cache first
+      const cacheKey = 'market_prices';
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        console.log('📦 Dashboard: Loading prices from cache');
+        setMarketData(cached);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('🔄 Dashboard: Fetching fresh market prices...');
       const pricesResponse = await fetch('/api/market/prices')
       console.log('→ Prices response status:', pricesResponse.status)
       
@@ -718,7 +730,7 @@ export default function Dashboard() {
               <User size={20} />
               <span>Profile</span>
             </Link>
-            <Link href="/trades" className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition">
+            <Link href="/trade-history" className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition">
               <History size={20} />
               <span>Trades</span>
             </Link>

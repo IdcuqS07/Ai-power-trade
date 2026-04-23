@@ -1,5 +1,5 @@
 """
-Blockchain Service - BSC Testnet Integration
+Blockchain Service - Polygon Amoy Testnet Integration
 Handles smart contract interactions for AITradeUSDT token
 """
 from web3 import Web3
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class BlockchainService:
     def __init__(self):
-        # BSC Testnet RPCs (fallback support)
+        # Polygon Amoy Testnet RPCs (fallback support)
         self.rpcs = [
             "https://bsc-testnet.publicnode.com",
             "https://data-seed-prebsc-1-s1.binance.org:8545",
@@ -34,20 +34,20 @@ class BlockchainService:
         self._load_contract()
     
     def _connect(self):
-        """Connect to BSC Testnet with fallback"""
+        """Connect to Polygon Amoy Testnet with fallback"""
         for rpc in self.rpcs:
             try:
                 w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={'timeout': 10}))
                 if w3.is_connected():
                     self.w3 = w3
                     self.connected = True
-                    logger.info(f"✓ Connected to BSC Testnet: {rpc}")
+                    logger.info(f"✓ Connected to Polygon Amoy Testnet: {rpc}")
                     return True
             except Exception as e:
                 logger.warning(f"Failed to connect to {rpc}: {e}")
                 continue
         
-        logger.error("Failed to connect to any BSC Testnet RPC")
+        logger.error("Failed to connect to any Polygon Amoy Testnet RPC")
         return False
     
     def _load_contract(self):
@@ -164,7 +164,7 @@ class BlockchainService:
                 )),
                 'contract_address': self.contract_address,
                 'deployed': True,
-                'network': 'BSC Testnet',
+                'network': 'Polygon Amoy Testnet',
                 'chain_id': self.chain_id,
                 'explorer': f'https://testnet.bscscan.com/address/{self.contract_address}'
             }
@@ -181,7 +181,7 @@ class BlockchainService:
             return {
                 'connected': True,
                 'chain_id': self.chain_id,
-                'network': 'BSC Testnet',
+                'network': 'Polygon Amoy Testnet',
                 'latest_block': self.w3.eth.block_number,
                 'gas_price': self.w3.from_wei(self.w3.eth.gas_price, 'gwei'),
                 'explorer': 'https://testnet.bscscan.com'

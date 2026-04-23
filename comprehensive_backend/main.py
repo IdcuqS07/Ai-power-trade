@@ -25,6 +25,17 @@ from backtesting import BacktestEngine
 from blockchain_service import blockchain_service
 from settlement_service import settlement_service
 
+# Import Enhanced AI Predictors
+try:
+    from enhanced_predictor import enhanced_predictor
+    from lstm_predictor import lstm_predictor
+    from coingecko_api import coingecko_api
+    ENHANCED_AI_AVAILABLE = True
+    logger.info("✓ Enhanced AI predictors loaded")
+except ImportError as e:
+    ENHANCED_AI_AVAILABLE = False
+    logger.warning(f"Enhanced AI not available: {e}")
+
 # Import Database and Auth
 from database import init_db
 from auth_routes import router as auth_router
@@ -2112,3 +2123,242 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
     except Exception as e:
         logger.error(f"Error executing AI trade: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Enhanced AI Prediction Endpoints (5th Wave) ============
+
+@app.get("/api/ai/enhanced-prediction/{symbol}")
+async def get_enhanced_prediction(symbol: str):
+    """Get enhanced AI prediction using LSTM + ML + CoinGecko data"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="Enhanced AI features not available. Install TensorFlow: pip install tensorflow"
+        )
+    
+    try:
+        # Get price history
+        price_history = trading_state["price_history"].get(symbol, [])
+        
+        if len(price_history) < 20:
+            return {
+                "success": False,
+                "error": "Insufficient price history for enhanced prediction",
+                "symbol": symbol
+            }
+        
+        # Generate enhanced prediction
+        prediction = enhanced_predictor.predict(symbol, price_history)
+        
+        return {
+            "success": True,
+            "data": prediction
+        }
+    
+    except Exception as e:
+        logger.error(f"Enhanced prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/coingecko/{symbol}")
+async def get_coingecko_data(symbol: str):
+    """Get market data from CoinGecko API"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="CoinGecko integration not available")
+    
+    try:
+        market_data = coingecko_api.get_enhanced_market_data(symbol)
+        
+        if not market_data:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        return {
+            "success": True,
+            "data": market_data
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"CoinGecko API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/market-sentiment/{symbol}")
+async def get_market_sentiment(symbol: str):
+    """Get market sentiment from CoinGecko"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="CoinGecko integration not available")
+    
+    try:
+        sentiment = coingecko_api.get_market_sentiment(symbol)
+        
+        if not sentiment:
+            raise HTTPException(status_code=404, detail=f"No sentiment data for {symbol}")
+        
+        return {
+            "success": True,
+            "data": sentiment
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Sentiment API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/global-market")
+async def get_global_market():
+    """Get global cryptocurrency market data"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="CoinGecko integration not available")
+    
+    try:
+        global_data = coingecko_api.get_global_market_data()
+        
+        if not global_data:
+            raise HTTPException(status_code=500, detail="Failed to fetch global market data")
+        
+        return {
+            "success": True,
+            "data": global_data
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Global market API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/trending")
+async def get_trending_coins():
+    """Get trending cryptocurrencies"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="CoinGecko integration not available")
+    
+    try:
+        trending = coingecko_api.get_trending_coins()
+        
+        if not trending:
+            raise HTTPException(status_code=500, detail="Failed to fetch trending coins")
+        
+        return {
+            "success": True,
+            "data": trending
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trending API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/lstm/train")
+async def train_lstm_model(symbol: str, epochs: int = 50):
+    """Train LSTM model on historical price data"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="LSTM features not available")
+    
+    try:
+        price_history = trading_state["price_history"].get(symbol, [])
+        
+        if len(price_history) < lstm_predictor.sequence_length + 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Need at least {lstm_predictor.sequence_length + 10} data points for training"
+            )
+        
+        result = lstm_predictor.train(price_history, epochs=epochs)
+        
+        return {
+            "success": result.get("success", False),
+            "data": result
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"LSTM training error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/lstm/predict/{symbol}")
+async def get_lstm_prediction(symbol: str):
+    """Get LSTM price prediction"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="LSTM features not available")
+    
+    try:
+        price_history = trading_state["price_history"].get(symbol, [])
+        
+        if len(price_history) < lstm_predictor.sequence_length:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Need at least {lstm_predictor.sequence_length} data points"
+            )
+        
+        prediction = lstm_predictor.predict(price_history)
+        
+        if not prediction:
+            raise HTTPException(status_code=500, detail="LSTM model not trained")
+        
+        return {
+            "success": True,
+            "data": prediction
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"LSTM prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/model-status")
+async def get_ai_model_status():
+    """Get status of all AI models"""
+    if not ENHANCED_AI_AVAILABLE:
+        return {
+            "success": False,
+            "error": "Enhanced AI features not available",
+            "install_command": "pip install tensorflow keras"
+        }
+    
+    try:
+        status = enhanced_predictor.get_model_status()
+        
+        return {
+            "success": True,
+            "data": status
+        }
+    
+    except Exception as e:
+        logger.error(f"Model status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/confidence-thresholds")
+async def get_confidence_thresholds():
+    """Get confidence score thresholds for color coding"""
+    if not ENHANCED_AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Enhanced AI features not available")
+    
+    return {
+        "success": True,
+        "data": {
+            "thresholds": enhanced_predictor.CONFIDENCE_THRESHOLDS,
+            "colors": {
+                "green": "High confidence (>= 75%)",
+                "yellow": "Medium confidence (60-74%)",
+                "red": "Low confidence (< 60%)"
+            }
+        }
+    }
+
+
+# ============ Run Server ============
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

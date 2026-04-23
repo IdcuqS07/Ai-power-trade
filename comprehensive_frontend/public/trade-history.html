@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polygon Trade History Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        tr:hover {
+            background: #f8f9ff;
+        }
+        .badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            display: inline-block;
+        }
+        .badge-buy { background: #d4edda; color: #155724; }
+        .badge-sell { background: #f8d7da; color: #721c24; }
+        .badge-hold { background: #d1ecf1; color: #0c5460; }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 0.9em;
+        }
+        .tx-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .tx-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Polygon Trade History Test</h1>
+        <p class="subtitle">Fetching trades directly from Polygon Amoy blockchain</p>
+        
+        <div class="info">
+            <strong>Contract:</strong> 0xA2E0F4A542b700f437c27Ce28B31499023d9a53A<br>
+            <strong>Network:</strong> Polygon Amoy Testnet (Chain ID: 80002)<br>
+            <strong>RPC:</strong> https://rpc-amoy.polygon.technology/
+        </div>
+
+        <div id="stats" class="stats" style="display: none;">
+            <div class="stat-card">
+                <div class="stat-label">Total Trades</div>
+                <div class="stat-value" id="totalTrades">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Volume</div>
+                <div class="stat-value" id="totalVolume">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Unique Traders</div>
+                <div class="stat-value" id="uniqueTraders">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Latest Trade</div>
+                <div class="stat-value" id="latestTrade" style="font-size: 1.2em;">-</div>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Fetching trades from blockchain...</p>
+        </div>
+
+        <div id="error" style="display: none;"></div>
+        <div id="success" style="display: none;"></div>
+
+        <div id="tradesContainer" style="display: none;">
+            <h2 style="margin-top: 30px; color: #667eea;">Trade History</h2>
+            <table id="tradesTable">
+                <thead>
+                    <tr>
+                        <th>Trade ID</th>
+                        <th>Time</th>
+                        <th>Trader</th>
+                        <th>Symbol</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Transaction</th>
+                    </tr>
+                </thead>
+                <tbody id="tradesBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const CONTRACT_ADDRESS = '0xA2E0F4A542b700f437c27Ce28B31499023d9a53A';
+        const RPC_URLS = [
+            'https://rpc-amoy.polygon.technology/',
+            'https://polygon-amoy.drpc.org',
+            'https://polygon-amoy-bor-rpc.publicnode.com'
+        ];
+        const EXPLORER_URL = 'https://amoy.polygonscan.com';
+
+        // TradeExecuted event signature
+        const TRADE_EXECUTED_TOPIC = '0x26fd4a093df4754ac881e791536e2d75dfd4589d79cd8f473f050683b7916f77';
+
+        // Contract was deployed recently, so we only need to check recent blocks
+        const BLOCKS_TO_SCAN = 100000; // Last ~100k blocks (about 2 days on Polygon)
+
+        async function fetchTrades() {
+            let lastError = null;
+            
+            // Try each RPC URL
+            for (let i = 0; i < RPC_URLS.length; i++) {
+                try {
+                    const rpcUrl = RPC_URLS[i];
+                    console.log(`Trying RPC ${i + 1}/${RPC_URLS.length}: ${rpcUrl}`);
+                    
+                    const web3 = new Web3(rpcUrl);
+                    
+                    console.log('Connecting to Polygon Amoy...');
+                    const blockNumber = await web3.eth.getBlockNumber();
+                    console.log('Current block:', blockNumber);
+
+                    // Calculate from block (recent blocks only)
+                    const fromBlock = Math.max(0, blockNumber - BLOCKS_TO_SCAN);
+                    console.log(`Fetching trade events from block ${fromBlock} to ${blockNumber}...`);
+
+                    const logs = await web3.eth.getPastLogs({
+                        address: CONTRACT_ADDRESS,
+                        topics: [TRADE_EXECUTED_TOPIC],
+                        fromBlock: fromBlock,
+                        toBlock: 'latest'
+                    });
+
+                    console.log('Found', logs.length, 'trades');
+
+                    if (logs.length === 0) {
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('error').style.display = 'block';
+                        document.getElementById('error').className = 'error';
+                        document.getElementById('error').innerHTML = `<strong>No trades found!</strong><br>Scanned blocks ${fromBlock} to ${blockNumber}. Contract may have been deployed earlier or no trades executed yet.`;
+                        return;
+                    }
+
+                    // Decode logs
+                    const trades = [];
+                    const traders = new Set();
+                    let totalVolume = 0;
+
+                    for (const log of logs) {
+                        try {
+                            // Decode event data
+                            const tradeId = web3.utils.hexToNumber(log.topics[1]);
+                            const trader = '0x' + log.topics[2].slice(26);
+                            
+                            // Decode data field (remove 0x prefix)
+                            const data = log.data.slice(2);
+                            
+                            // Data layout (each 64 chars = 32 bytes):
+                            // 0-64: offset to symbol (pointer)
+                            // 64-128: offset to tradeType (pointer)
+                            // 128-192: amount (uint256)
+                            // 192-256: timestamp (uint256)
+                            // 256-320: symbol length
+                            // 320-384: symbol data (padded)
+                            // 384-448: tradeType length
+                            // 448-512: tradeType data (padded)
+                            
+                            const amount = web3.utils.fromWei('0x' + data.slice(128, 192), 'ether');
+                            const timestamp = web3.utils.hexToNumber('0x' + data.slice(192, 256));
+                            
+                            // Get symbol length and data
+                            const symbolLen = web3.utils.hexToNumber('0x' + data.slice(256, 320));
+                            const symbolHex = data.slice(320, 320 + symbolLen * 2);
+                            const symbol = web3.utils.hexToAscii('0x' + symbolHex);
+                            
+                            // Get tradeType length and data
+                            const tradeTypeLen = web3.utils.hexToNumber('0x' + data.slice(384, 448));
+                            const tradeTypeHex = data.slice(448, 448 + tradeTypeLen * 2);
+                            const tradeType = web3.utils.hexToAscii('0x' + tradeTypeHex);
+
+                            traders.add(trader);
+                            totalVolume += parseFloat(amount);
+
+                            trades.push({
+                                tradeId,
+                                trader,
+                                symbol,
+                                tradeType,
+                                amount,
+                                timestamp,
+                                txHash: log.transactionHash,
+                                blockNumber: log.blockNumber
+                            });
+                            
+                            console.log('Decoded trade:', { tradeId, symbol, tradeType, amount, timestamp });
+                        } catch (err) {
+                            console.error('Error decoding log:', err, log);
+                        }
+                    }
+
+                    // Sort by trade ID descending
+                    trades.sort((a, b) => b.tradeId - a.tradeId);
+
+                    // Update stats
+                    document.getElementById('totalTrades').textContent = trades.length;
+                    document.getElementById('totalVolume').textContent = totalVolume.toFixed(2) + ' atUSDT';
+                    document.getElementById('uniqueTraders').textContent = traders.size;
+                    
+                    if (trades.length > 0) {
+                        const latestTime = new Date(trades[0].timestamp * 1000);
+                        const now = new Date();
+                        const diffHours = Math.floor((now - latestTime) / (1000 * 60 * 60));
+                        document.getElementById('latestTrade').textContent = diffHours + 'h ago';
+                    }
+
+                    // Display trades
+                    const tbody = document.getElementById('tradesBody');
+                    tbody.innerHTML = '';
+
+                    trades.forEach(trade => {
+                        const row = document.createElement('tr');
+                        const date = new Date(trade.timestamp * 1000);
+                        const badgeClass = `badge badge-${trade.tradeType.toLowerCase()}`;
+                        
+                        row.innerHTML = `
+                            <td><strong>#${trade.tradeId}</strong></td>
+                            <td>${date.toLocaleString()}</td>
+                            <td><code>${trade.trader.slice(0, 6)}...${trade.trader.slice(-4)}</code></td>
+                            <td><strong>${trade.symbol}</strong></td>
+                            <td><span class="${badgeClass}">${trade.tradeType}</span></td>
+                            <td>${parseFloat(trade.amount).toFixed(2)} atUSDT</td>
+                            <td>
+                                <a href="${EXPLORER_URL}/tx/${trade.txHash}" target="_blank" class="tx-link">
+                                    ${trade.txHash.slice(0, 8)}...
+                                </a>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+
+                    // Show results
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('stats').style.display = 'grid';
+                    document.getElementById('tradesContainer').style.display = 'block';
+                    document.getElementById('success').style.display = 'block';
+                    document.getElementById('success').className = 'success';
+                    document.getElementById('success').innerHTML = `<strong>✅ Success!</strong> Found ${trades.length} trade(s) on the blockchain using ${rpcUrl}`;
+                    
+                    // Success, exit loop
+                    return;
+
+                } catch (error) {
+                    console.error(`RPC ${i + 1} failed:`, error);
+                    lastError = error;
+                    
+                    // If not the last RPC, continue to next
+                    if (i < RPC_URLS.length - 1) {
+                        console.log('Trying next RPC...');
+                        continue;
+                    }
+                }
+            }
+            
+            // All RPCs failed
+            console.error('All RPCs failed. Last error:', lastError);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').className = 'error';
+            document.getElementById('error').innerHTML = `<strong>Error!</strong><br>All RPC endpoints failed. Last error: ${lastError.message}<br><br>Try refreshing the page or check your internet connection.`;
+        }
+
+        // Auto-fetch on load
+        window.addEventListener('load', fetchTrades);
+    </script>
+</body>
+</html>
