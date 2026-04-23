@@ -6,13 +6,13 @@ import { ethers } from 'ethers'
 import { Wallet, ArrowUpCircle, ArrowDownCircle, History, DollarSign, TrendingUp, Home, Zap, ExternalLink } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
-const BSC_TESTNET_PARAMS = {
-  chainId: '0x61',
-  chainName: 'BSC Testnet',
-  nativeCurrency: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
-  rpcUrls: ['https://bsc-testnet.publicnode.com'],
-  blockExplorerUrls: ['https://testnet.bscscan.com']
+const CONTRACT_ADDRESS = '0xC25e59ba79285018197152FF99a3BcD58D709Cf2'
+const POLYGON_AMOY_PARAMS = {
+  chainId: '0x13882',
+  chainName: 'Polygon Amoy Testnet',
+  nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+  rpcUrls: ['https://rpc-amoy.polygon.technology'],
+  blockExplorerUrls: ['https://amoy.polygonscan.com']
 }
 
 // Full contract ABI for faucet function
@@ -128,8 +128,8 @@ export default function WalletPage() {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' })
       setChainId(chainId)
       
-      if (chainId !== BSC_TESTNET_PARAMS.chainId) {
-        await switchToBSCTestnet()
+      if (chainId !== POLYGON_AMOY_PARAMS.chainId) {
+        await switchToPolygonAmoy()
       }
       
       // Auto-add atUSDT token to MetaMask
@@ -143,18 +143,18 @@ export default function WalletPage() {
     }
   }
 
-  const switchToBSCTestnet = async () => {
+  const switchToPolygonAmoy = async () => {
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: BSC_TESTNET_PARAMS.chainId }],
+        params: [{ chainId: POLYGON_AMOY_PARAMS.chainId }],
       })
     } catch (switchError) {
       if (switchError.code === 4902) {
         try {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [BSC_TESTNET_PARAMS],
+            params: [POLYGON_AMOY_PARAMS],
           })
         } catch (addError) {
           console.error('Add network error:', addError)
@@ -206,7 +206,7 @@ export default function WalletPage() {
         return // Success, exit
       }
     } catch (error) {
-      console.log('RPC error (normal on BSC Testnet):', error.message)
+      console.log('RPC error (normal on Polygon Amoy Testnet):', error.message)
       
       // Retry once if first attempt
       if (retryCount === 0) {
@@ -238,9 +238,9 @@ export default function WalletPage() {
     }
 
     // Check if on correct network
-    if (chainId !== BSC_TESTNET_PARAMS.chainId) {
-      setOperationResult({ success: false, message: 'Please switch to BSC Testnet!' })
-      await switchToBSCTestnet()
+    if (chainId !== POLYGON_AMOY_PARAMS.chainId) {
+      setOperationResult({ success: false, message: 'Please switch to Polygon Amoy Testnet!' })
+      await switchToPolygonAmoy()
       return
     }
 
@@ -249,14 +249,14 @@ export default function WalletPage() {
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       const signer = provider.getSigner()
       
-      // Check BNB balance for gas
+      // Check MATIC balance for gas
       const bnbBalance = await provider.getBalance(account)
       const bnbBalanceEth = ethers.utils.formatEther(bnbBalance)
       
       if (parseFloat(bnbBalanceEth) < 0.001) {
         setOperationResult({ 
           success: false, 
-          message: `Insufficient tBNB for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} tBNB. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart` 
+          message: `Insufficient MATIC for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} MATIC. Get free MATIC from: https://faucet.polygon.technology` 
         })
         setClaiming(false)
         return
@@ -314,9 +314,9 @@ export default function WalletPage() {
       if (error.code === 4001) {
         errorMessage += 'Transaction rejected by user'
       } else if (error.code === -32603) {
-        errorMessage += 'Internal error. Please check your tBNB balance for gas.'
+        errorMessage += 'Internal error. Please check your MATIC balance for gas.'
       } else if (error.message?.includes('insufficient funds')) {
-        errorMessage += 'Insufficient tBNB for gas. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart'
+        errorMessage += 'Insufficient MATIC for gas. Get free MATIC from: https://faucet.polygon.technology'
       } else if (error.message?.includes('Cooldown not finished')) {
         errorMessage += 'Please wait 24 hours between claims'
       } else {
@@ -483,11 +483,11 @@ export default function WalletPage() {
       <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg p-6 mb-8">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-2xl font-bold mb-2">🎁 BSC Testnet Faucet</h3>
+            <h3 className="text-2xl font-bold mb-2">🎁 Polygon Amoy Testnet Faucet</h3>
             <p className="text-purple-200">Claim free atUSDT tokens for testing</p>
             {!account && (
               <p className="text-purple-100 text-sm mt-2">
-                ⚠️ You need tBNB for gas fees. Get free tBNB first!
+                ⚠️ You need MATIC for gas fees. Get free MATIC first!
               </p>
             )}
           </div>
@@ -541,16 +541,16 @@ export default function WalletPage() {
                 Add to MetaMask
               </button>
               <a
-                href="https://testnet.bnbchain.org/faucet-smart"
+                href="https://faucet.polygon.technology"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-yellow-600 hover:bg-yellow-500 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1 font-semibold"
               >
-                Get tBNB
+                Get MATIC
                 <ExternalLink size={14} />
               </a>
               <a
-                href={`https://testnet.bscscan.com/address/${CONTRACT_ADDRESS}`}
+                href={`https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-purple-700 hover:bg-purple-600 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1"
@@ -636,7 +636,7 @@ export default function WalletPage() {
                         balance.currency === 'USDT' ? 'bg-green-600' :
                         balance.currency === 'BTC' ? 'bg-orange-600' :
                         balance.currency === 'ETH' ? 'bg-blue-600' :
-                        balance.currency === 'BNB' ? 'bg-yellow-600' :
+                        balance.currency === 'MATIC' ? 'bg-yellow-600' :
                         'bg-purple-600'
                       }`}>
                         {balance.currency[0]}
@@ -708,7 +708,7 @@ export default function WalletPage() {
                   <option value="USDT">USDT</option>
                   <option value="BTC">BTC</option>
                   <option value="ETH">ETH</option>
-                  <option value="BNB">BNB</option>
+                  <option value="MATIC">MATIC</option>
                   <option value="SOL">SOL</option>
                 </select>
               </div>
@@ -757,7 +757,7 @@ export default function WalletPage() {
                   <option value="USDT">USDT</option>
                   <option value="BTC">BTC</option>
                   <option value="ETH">ETH</option>
-                  <option value="BNB">BNB</option>
+                  <option value="MATIC">MATIC</option>
                   <option value="SOL">SOL</option>
                 </select>
               </div>
