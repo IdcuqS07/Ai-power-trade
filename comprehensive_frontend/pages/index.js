@@ -415,15 +415,15 @@ export default function Dashboard() {
         accountBalance: blockchainBalance
       })
       
-      // Check tBNB balance for gas
+      // Check MATIC balance for gas
       const bnbBalance = await provider.getBalance(account)
       const bnbBalanceEth = ethers.utils.formatEther(bnbBalance)
-      console.log('tBNB balance:', bnbBalanceEth)
+      console.log('MATIC balance:', bnbBalanceEth)
       
       if (parseFloat(bnbBalanceEth) < 0.001) {
         setTradeResult({ 
           success: false, 
-          reason: `Insufficient tBNB for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} tBNB. Get free tBNB from: https://testnet.bnbchain.org/faucet-smart` 
+          reason: `Insufficient MATIC for gas! You have ${parseFloat(bnbBalanceEth).toFixed(4)} MATIC. Get free MATIC from: https://testnet.faucet.polygon.technology` 
         })
         setExecuting(false)
         return
@@ -589,7 +589,7 @@ export default function Dashboard() {
       } else if (error.code === -32603) {
         errorMessage += 'Internal error. Check your balance and gas.'
       } else if (error.message?.includes('insufficient funds')) {
-        errorMessage += 'Insufficient tBNB for gas fees'
+        errorMessage += 'Insufficient MATIC for gas fees'
       } else if (error.message?.includes('Insufficient balance')) {
         errorMessage += 'Insufficient atUSDT balance'
       } else if (error.message?.includes('Amount must be > 0')) {
