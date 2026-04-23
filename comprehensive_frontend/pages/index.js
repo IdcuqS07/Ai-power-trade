@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ethers } from 'ethers'
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User, Brain } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8001'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
 const CONTRACT_ADDRESS = '0xC25e59ba79285018197152FF99a3BcD58D709Cf2'
 
 // Use proper ABI from contract

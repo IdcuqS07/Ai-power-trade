@@ -3,7 +3,7 @@ import axios from 'axios'
 import { ArrowLeft, Shield, CheckCircle, Activity } from 'lucide-react'
 import Link from 'next/link'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8001'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
 
 export default function Analytics() {
   const [records, setRecords] = useState([])

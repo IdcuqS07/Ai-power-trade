@@ -5,7 +5,7 @@ import { useRouter } from 'next/router'
 import { ethers } from 'ethers'
 import { Wallet, ArrowUpCircle, ArrowDownCircle, History, DollarSign, TrendingUp, Home, Zap, ExternalLink } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8001'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
 const CONTRACT_ADDRESS = '0xC25e59ba79285018197152FF99a3BcD58D709Cf2'
 const POLYGON_AMOY_PARAMS = {
   chainId: '0x13882',
