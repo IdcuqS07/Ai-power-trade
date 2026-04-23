@@ -282,25 +282,25 @@ export default function ProfilePage() {
             <div className="space-y-4">
               <div>
                 <div className="text-sm text-blue-200 mb-1">Total Trades</div>
-                <div className="text-3xl font-bold">{stats.total_trades}</div>
+                <div className="text-3xl font-bold">{stats?.total_trades || 0}</div>
               </div>
               <div>
                 <div className="text-sm text-blue-200 mb-1">Win Rate</div>
-                <div className="text-3xl font-bold">{stats.win_rate.toFixed(1)}%</div>
+                <div className="text-3xl font-bold">{(stats?.win_rate || 0).toFixed(1)}%</div>
               </div>
               <div>
                 <div className="text-sm text-blue-200 mb-1">Total Profit</div>
-                <div className={`text-3xl font-bold ${stats.total_profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  ${stats.total_profit.toFixed(2)}
+                <div className={`text-3xl font-bold ${(stats?.total_profit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  ${(stats?.total_profit || 0).toFixed(2)}
                 </div>
               </div>
               <div>
                 <div className="text-sm text-blue-200 mb-1">Best Trade</div>
-                <div className="text-3xl font-bold text-green-400">${stats.best_trade.toFixed(2)}</div>
+                <div className="text-3xl font-bold text-green-400">${(stats?.best_trade || 0).toFixed(2)}</div>
               </div>
               <div>
                 <div className="text-sm text-blue-200 mb-1">Days Active</div>
-                <div className="text-3xl font-bold">{stats.days_active}</div>
+                <div className="text-3xl font-bold">{stats?.days_active || 0}</div>
               </div>
             </div>
           </div>
