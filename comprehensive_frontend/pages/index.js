@@ -365,6 +365,7 @@ export default function Dashboard() {
     setExecuting(true)
     setTradeResult(null)
     
+    let txHash = null
     if (typeof window === 'undefined' || !window.ethereum) {
       setTradeResult({ success: false, message: 'MetaMask not available' })
       setExecuting(false)
@@ -470,6 +471,7 @@ export default function Dashboard() {
         
         console.log('Transaction sent:', tx.hash)
         setTradeResult({ success: true, message: `Transaction sent! Hash: ${tx.hash.slice(0, 10)}... Waiting for confirmation...` })
+        txHash = tx.hash
         
         const receipt = await tx.wait()
         console.log('Transaction confirmed:', receipt)
@@ -573,7 +575,7 @@ export default function Dashboard() {
           type: signal.signal,
           price: currentPrice,
           confidence: signal.confidence,
-          tx_hash: tx.hash
+          tx_hash: txHash
         }
       })
       
