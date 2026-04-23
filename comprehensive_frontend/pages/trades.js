@@ -3,7 +3,7 @@ import axios from 'axios'
 import { ArrowLeft, TrendingUp, TrendingDown, Clock, DollarSign } from 'lucide-react'
 import Link from 'next/link'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8001'
 
 export default function Trades() {
   const [trades, setTrades] = useState([])

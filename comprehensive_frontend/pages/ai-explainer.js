@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Brain, TrendingUp, TrendingDown, Activity, AlertCircle, CheckCircle, BarChart3, Lightbulb, Target, Shield } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8001'
 
 export default function AIExplainer() {
   const [selectedCoin, setSelectedCoin] = useState('BTC')
