@@ -3,7 +3,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { ArrowLeft, Play, TrendingUp, Award, BarChart3 } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
 
 export default function Backtest() {
   const [symbol, setSymbol] = useState('BTC')
