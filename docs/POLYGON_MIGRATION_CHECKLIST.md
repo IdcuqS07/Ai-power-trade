@@ -12,8 +12,8 @@
 ## Phase 1: Repository Setup (10 menit)
 
 ### 1.1 Run Migration Script
-- [ ] `chmod +x migrate-to-polygon.sh`
-- [ ] `./migrate-to-polygon.sh`
+- [ ] `chmod +x archive/legacy-scripts/migrate-to-polygon.sh`
+- [ ] `./archive/legacy-scripts/migrate-to-polygon.sh`
 - [ ] Verifikasi folder `../ai-power-trade-polygon` terbuat
 - [ ] Cek file konfigurasi Polygon sudah ada
 

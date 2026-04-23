@@ -8,6 +8,8 @@ This folder contains project history that is no longer part of the active runtim
   - older app variants that were kept for reference
 - `legacy-backups/`
   - backup and `.orig` files moved out of active source directories
+- `legacy-scripts/`
+  - deprecated scripts that no longer represent the active workflow
 
 ## Active Runtime
 

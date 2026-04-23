@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Quick Deploy to Polygon Amoy"
+echo "🚀 Quick Deploy"
 echo ""
 
 # Check contract address
@@ -9,7 +9,7 @@ if grep -q "YOUR_CONTRACT_ADDRESS_HERE" comprehensive_backend/.env.polygon; then
     echo "   1. Go to https://remix.ethereum.org/"
     echo "   2. Upload blockchain/AITradeUSDT.sol"
     echo "   3. Compile (Solidity 0.8.19)"
-    echo "   4. Deploy to Polygon Amoy (80002)"
+    echo "   4. Deploy to the configured network (Polygon Amoy / 80002)"
     echo "   5. Copy contract address"
     echo "   6. Update comprehensive_backend/.env.polygon"
     echo ""
@@ -31,6 +31,6 @@ echo "✅ Deployment complete!"
 echo ""
 echo "🔗 Next steps:"
 echo "   1. Test frontend URL"
-echo "   2. Connect wallet to Polygon Amoy"
+echo "   2. Connect wallet to the configured network"
 echo "   3. Get MATIC: https://faucet.polygon.technology/"
 echo "   4. Test trading features"

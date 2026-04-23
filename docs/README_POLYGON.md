@@ -56,7 +56,7 @@ cp .env.polygon .env
 
 ### 5. Deploy Frontend
 ```bash
-./quick-deploy-polygon.sh
+./quick-deploy.sh
 ```
 
 ## 🎯 Features

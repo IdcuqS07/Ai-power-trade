@@ -54,7 +54,7 @@ Migrasi AI Power Trade dari BSC Testnet ke Polygon Amoy Testnet menggunakan akun
 ## Files Created
 
 ### Migration Scripts
-1. **migrate-to-polygon.sh** - Automated migration script
+1. **archive/legacy-scripts/migrate-to-polygon.sh** - Automated migration script
    - Clones project to new directory
    - Creates Polygon configuration
    - Initializes new git repo
@@ -114,7 +114,7 @@ Migrasi AI Power Trade dari BSC Testnet ke Polygon Amoy Testnet menggunakan akun
 
 ### Phase 1: Repository Setup (10 min)
 ```bash
-./migrate-to-polygon.sh
+./archive/legacy-scripts/migrate-to-polygon.sh
 cd ../ai-power-trade-polygon
 git remote add origin https://github.com/0xCryptotech/ai-power-trade-polygon.git
 git push -u origin main

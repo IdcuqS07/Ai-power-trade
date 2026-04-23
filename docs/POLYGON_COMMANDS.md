@@ -3,7 +3,7 @@
 ## 🚀 One-Line Setup
 
 ```bash
-chmod +x migrate-to-polygon.sh && ./migrate-to-polygon.sh
+chmod +x archive/legacy-scripts/migrate-to-polygon.sh && ./archive/legacy-scripts/migrate-to-polygon.sh
 ```
 
 ---
@@ -12,8 +12,8 @@ chmod +x migrate-to-polygon.sh && ./migrate-to-polygon.sh
 
 ### 1. Run Migration Script
 ```bash
-chmod +x migrate-to-polygon.sh
-./migrate-to-polygon.sh
+chmod +x archive/legacy-scripts/migrate-to-polygon.sh
+./archive/legacy-scripts/migrate-to-polygon.sh
 ```
 
 ### 2. Navigate to New Project
@@ -427,8 +427,8 @@ npm list --depth=0
 
 ```bash
 # Complete setup in one go
-chmod +x migrate-to-polygon.sh && \
-./migrate-to-polygon.sh && \
+chmod +x archive/legacy-scripts/migrate-to-polygon.sh && \
+./archive/legacy-scripts/migrate-to-polygon.sh && \
 cd ../ai-power-trade-polygon && \
 echo "✅ Migration complete! Next: Create GitHub repo and push"
 ```

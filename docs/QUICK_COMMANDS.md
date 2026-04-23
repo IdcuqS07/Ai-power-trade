@@ -4,7 +4,7 @@
 
 ### 1️⃣ Run Super Script (2 min)
 ```bash
-./super-migrate-polygon.sh
+./archive/legacy-scripts/super-migrate-polygon.sh
 ```
 ✅ Creates GitHub repo automatically
 ✅ Pushes all files automatically
@@ -46,7 +46,7 @@ nano .env
 ### 4️⃣ Deploy Frontend (3 min)
 ```bash
 cd ../ai-power-trade-polygon
-./quick-deploy-polygon.sh
+./quick-deploy.sh
 ```
 
 ---
@@ -132,7 +132,7 @@ gh repo delete 0xCryptotech/ai-power-trade-polygon --yes
 rm -rf ../ai-power-trade-polygon
 
 # Run super script again
-./super-migrate-polygon.sh
+./archive/legacy-scripts/super-migrate-polygon.sh
 ```
 
 ### Check Network
@@ -162,12 +162,12 @@ print(f'{w3.from_wei(balance, \"ether\")} MATIC')
 
 ### Complete Migration
 ```bash
-./super-migrate-polygon.sh && echo "✅ Repo created! Now deploy contract."
+./archive/legacy-scripts/super-migrate-polygon.sh && echo "✅ Repo created! Now deploy contract."
 ```
 
 ### Quick Deploy
 ```bash
-cd ../ai-power-trade-polygon && ./quick-deploy-polygon.sh
+cd ../ai-power-trade-polygon && ./quick-deploy.sh
 ```
 
 ### Open All Resources
@@ -394,8 +394,8 @@ open https://docs.polygon.technology/
 
 ```bash
 # Migration
-alias migrate="./super-migrate-polygon.sh"
-alias deploy="./quick-deploy-polygon.sh"
+alias migrate="./archive/legacy-scripts/super-migrate-polygon.sh"
+alias deploy="./quick-deploy.sh"
 
 # Navigation
 alias polygon="cd ../ai-power-trade-polygon"
@@ -430,7 +430,7 @@ source ~/.zshrc
 ### Full Migration Flow
 ```bash
 # 1. Migrate (2 min)
-./super-migrate-polygon.sh
+./archive/legacy-scripts/super-migrate-polygon.sh
 
 # 2. Get MATIC (2 min)
 open https://faucet.polygon.technology/
@@ -447,7 +447,7 @@ nano .env  # Add CONTRACT_ADDRESS & PRIVATE_KEY
 
 # 5. Deploy frontend (3 min)
 cd ..
-./quick-deploy-polygon.sh
+./quick-deploy.sh
 
 # Done! ✅
 ```
@@ -465,7 +465,7 @@ gh repo delete 0xCryptotech/ai-power-trade-polygon --yes
 rm -rf ../ai-power-trade-polygon
 
 # Start over
-./super-migrate-polygon.sh
+./archive/legacy-scripts/super-migrate-polygon.sh
 ```
 
 ### Fix Broken Deployment
@@ -496,7 +496,7 @@ rm -rf comprehensive_backend/.pytest_cache
 
 **Quick Start:**
 ```bash
-./super-migrate-polygon.sh
+./archive/legacy-scripts/super-migrate-polygon.sh
 ```
 
 **Total Time:** 11 minutes

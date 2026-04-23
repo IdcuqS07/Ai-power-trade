@@ -235,7 +235,7 @@ DevTools → Application → Clear Storage
 - 🔷 **NEW**: Polygon Amoy migration ready
 
 ### Polygon Migration (0xCryptotech Account)
-1. Run migration script: `./migrate-to-polygon.sh`
+1. Run migration script: `./archive/legacy-scripts/migrate-to-polygon.sh`
 2. Create GitHub repo: ai-power-trade-polygon
 3. Deploy smart contract to Polygon Amoy
 4. Deploy frontend to Vercel

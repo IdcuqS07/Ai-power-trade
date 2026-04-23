@@ -4,8 +4,8 @@
 
 ### 1. Jalankan Script Migrasi
 ```bash
-chmod +x migrate-to-polygon.sh
-./migrate-to-polygon.sh
+chmod +x archive/legacy-scripts/migrate-to-polygon.sh
+./archive/legacy-scripts/migrate-to-polygon.sh
 ```
 
 Script akan otomatis:
