@@ -5,7 +5,7 @@ import { ethers } from 'ethers'
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Shield, CheckCircle, XCircle, History, LineChart, BarChart3 as BacktestIcon, Wallet, User, Brain } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.205.88:8000'
-const CONTRACT_ADDRESS = '0x00D6B7946E0c636Be59f79356e73fe4E42c60a33'
+const CONTRACT_ADDRESS = '0xC25e59ba79285018197152FF99a3BcD58D709Cf2'
 
 // Use proper ABI from contract
 const CONTRACT_ABI = [
@@ -788,7 +788,7 @@ export default function Dashboard() {
               <Wallet className="text-purple-200" size={20} />
             </div>
             <div className="text-2xl font-bold">{blockchainBalance.toFixed(2)} atUSDT</div>
-            <div className="text-sm text-purple-200">On BSC Testnet</div>
+            <div className="text-sm text-purple-200">On Polygon Amoy Testnet</div>
           </div>
         )}
       </div>
