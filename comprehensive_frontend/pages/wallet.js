@@ -6,7 +6,7 @@ import { ethers } from 'ethers'
 import { Wallet, ArrowUpCircle, ArrowDownCircle, History, DollarSign, TrendingUp, Home, Zap, ExternalLink } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://soon-damages-wide-drive.trycloudflare.com'
-const CONTRACT_ADDRESS = '0xC25e59ba79285018197152FF99a3BcD58D709Cf2'
+const CONTRACT_ADDRESS = '0xA2E0F4A542b700f437c27Ce28B31499023d9a53A'
 const POLYGON_AMOY_PARAMS = {
   chainId: '0x13882',
   chainName: 'Polygon Amoy Testnet',
