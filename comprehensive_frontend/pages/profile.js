@@ -254,8 +254,8 @@ export default function ProfilePage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-gray-700 rounded-lg px-4 py-3">
                 <span>Auto Trading</span>
-                <span className={profile.preferences.auto_trade ? 'text-green-500' : 'text-gray-500'}>
-                  {profile.preferences.auto_trade ? 'Enabled' : 'Disabled'}
+                <span className={profile.preferences?.auto_trade ? 'text-green-500' : 'text-gray-500'}>
+                  {profile.preferences?.auto_trade ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
               <div className="flex items-center justify-between bg-gray-700 rounded-lg px-4 py-3">
