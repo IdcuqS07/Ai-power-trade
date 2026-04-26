@@ -17,7 +17,7 @@ AI-powered cryptocurrency trading platform built on **Polygon Amoy Testnet**.
 
 ## 🔗 Live Demo
 
-**Production URL:** https://ai-power-trade-polygon.vercel.app
+**Production URL:** 
 
 ## 🛠️ Tech Stack
 
