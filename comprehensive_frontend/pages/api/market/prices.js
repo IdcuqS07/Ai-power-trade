@@ -1,6 +1,6 @@
 // API Proxy to bypass CORS and Mixed Content issues
 export default async function handler(req, res) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
   
   try {
     console.log('[API Proxy] Fetching from:', `${API_URL}/api/market/prices`)

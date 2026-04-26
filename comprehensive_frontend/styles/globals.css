@@ -2,10 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --apt-bg: #05090d;
+  --apt-bg-soft: #0a1117;
+  --apt-panel: rgba(10, 18, 24, 0.82);
+  --apt-panel-strong: rgba(9, 15, 22, 0.94);
+  --apt-text: #eef7fb;
+  --apt-muted: #8ca2b3;
+  --apt-line: rgba(121, 155, 180, 0.14);
+  --apt-cyan: #49e6ff;
+  --apt-cyan-soft: rgba(73, 230, 255, 0.1);
+  --apt-teal: #2ee6c8;
+  --apt-green: #4ade80;
+  --apt-amber: #fbbf24;
+  --apt-danger: #fb7185;
+  --apt-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
+}
+
+html,
+body,
+#__next {
+  min-height: 100%;
 }
 
 html,
@@ -15,44 +39,849 @@ body {
 }
 
 body {
-  background-color: #111827;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(73, 230, 255, 0.07), transparent 22%),
+    radial-gradient(circle at 88% 0%, rgba(46, 230, 200, 0.05), transparent 18%),
+    linear-gradient(180deg, #05080b 0%, #070c12 46%, #0a1219 100%);
+  color: var(--apt-text);
+  font-family: 'Inter', 'Avenir Next', 'Segoe UI', sans-serif;
+  line-height: 1.5;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at center, black 32%, transparent 88%);
+  opacity: 0.1;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at top right, rgba(73, 230, 255, 0.04), transparent 32%);
+  opacity: 0.18;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(73, 230, 255, 0.22);
   color: white;
 }
 
-/* Custom Range Slider Styles */
-input[type="range"].slider {
+.apt-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.apt-shell::before {
+  content: '';
+  position: fixed;
+  top: 8%;
+  right: -10%;
+  height: 320px;
+  width: 320px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(73, 230, 255, 0.05) 0%, transparent 72%);
+  filter: blur(24px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.apt-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--apt-line);
+  background: linear-gradient(180deg, rgba(10, 17, 24, 0.94), rgba(8, 13, 19, 0.92));
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  border-radius: 22px;
+}
+
+.apt-panel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(73, 230, 255, 0.16), transparent);
+  pointer-events: none;
+}
+
+.apt-panel-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto -18% -42% auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(73, 230, 255, 0.1), transparent 68%);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+.apt-panel-green {
+  border-color: rgba(74, 222, 128, 0.18);
+}
+
+.apt-spotlight-card {
+  background:
+    radial-gradient(circle at top right, rgba(73, 230, 255, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(8, 16, 24, 0.98), rgba(7, 12, 18, 0.94));
+}
+
+.apt-spotlight-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -8% -16% auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(46, 230, 200, 0.12), transparent 70%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.apt-spotlight-note,
+.apt-spotlight-stat,
+.apt-session-card,
+.apt-hero-foot-card,
+.apt-signal-card,
+.apt-ticker-item,
+.apt-metric-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.apt-spotlight-note::before,
+.apt-spotlight-stat::before,
+.apt-session-card::before,
+.apt-hero-foot-card::before,
+.apt-signal-card::before,
+.apt-ticker-item::before,
+.apt-metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(73, 230, 255, 0.06), transparent 34%);
+  pointer-events: none;
+}
+
+.apt-display {
+  font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.apt-mono,
+.apt-terminal-pill {
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
+}
+
+.apt-eyebrow {
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
+  color: rgba(120, 193, 215, 0.84);
+  font-size: 0.72rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+}
+
+.apt-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+}
+
+.apt-brand-mark {
+  display: grid;
+  place-items: center;
+  height: 44px;
+  width: 44px;
+  border-radius: 16px;
+  border: 1px solid rgba(73, 230, 255, 0.16);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(73, 230, 255, 0.2), transparent 44%),
+    linear-gradient(180deg, rgba(14, 28, 36, 0.98), rgba(7, 13, 18, 0.96));
+  color: var(--apt-cyan);
+  box-shadow: 0 10px 24px rgba(73, 230, 255, 0.08);
+}
+
+.apt-nav-link {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0.68rem 0.9rem;
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.88rem;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.apt-nav-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(73, 230, 255, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+  color: white;
+}
+
+.apt-nav-link-active {
+  border-color: rgba(73, 230, 255, 0.14);
+  background: rgba(73, 230, 255, 0.05);
+  color: white;
+}
+
+.apt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(73, 230, 255, 0.1);
+  background: rgba(73, 230, 255, 0.05);
+  padding: 0.48rem 0.82rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #dcfaff;
+}
+
+.apt-chip-green {
+  border-color: rgba(74, 222, 128, 0.18);
+  background: rgba(74, 222, 128, 0.1);
+  color: #dcfce7;
+}
+
+.apt-chip-amber {
+  border-color: rgba(251, 191, 36, 0.18);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fef3c7;
+}
+
+.apt-terminal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(73, 230, 255, 0.1);
+  background: rgba(5, 11, 16, 0.72);
+  padding: 0.62rem 0.78rem;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.apt-primary-button,
+.apt-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.62rem;
+  justify-content: center;
+  border-radius: 18px;
+  padding: 0.9rem 1.2rem;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.apt-primary-button {
+  border: 1px solid rgba(73, 230, 255, 0.14);
+  background: linear-gradient(180deg, rgba(73, 230, 255, 0.14), rgba(18, 33, 42, 0.9));
+  color: white;
+  box-shadow: 0 12px 28px rgba(73, 230, 255, 0.1);
+}
+
+.apt-secondary-button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.apt-primary-button:hover,
+.apt-secondary-button:hover {
+  transform: translateY(-1px);
+}
+
+.apt-primary-button:hover {
+  box-shadow: 0 14px 30px rgba(73, 230, 255, 0.14);
+}
+
+.apt-secondary-button:hover {
+  border-color: rgba(73, 230, 255, 0.16);
+  background: rgba(73, 230, 255, 0.06);
+}
+
+.apt-ticker-shell {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.apt-ticker-item {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  padding: 1rem 1rem 0.95rem;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.apt-ticker-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(73, 230, 255, 0.16);
+  background: linear-gradient(180deg, rgba(73, 230, 255, 0.06), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+}
+
+.apt-hero-foot-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  padding: 0.95rem 1rem;
+}
+
+.apt-session-panel {
+  background:
+    linear-gradient(90deg, rgba(73, 230, 255, 0.05), transparent 26%),
+    linear-gradient(180deg, rgba(10, 17, 24, 0.94), rgba(8, 13, 19, 0.92));
+}
+
+.apt-session-card {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.apt-stat-card,
+.apt-model-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+
+.apt-stat-icon {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 14px;
+  background: rgba(73, 230, 255, 0.1);
+  color: var(--apt-cyan);
+  box-shadow: inset 0 0 0 1px rgba(73, 230, 255, 0.08);
+}
+
+.apt-stat-icon-green {
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--apt-green);
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.08);
+}
+
+.apt-stat-icon-amber {
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--apt-amber);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.08);
+}
+
+.apt-model-card {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.apt-model-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(73, 230, 255, 0.18);
+  background: rgba(73, 230, 255, 0.08);
+  padding: 0.35rem 0.72rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #dcfaff;
+}
+
+.apt-model-status-green {
+  border-color: rgba(74, 222, 128, 0.18);
+  background: rgba(74, 222, 128, 0.1);
+  color: #dcfce7;
+}
+
+.apt-model-status-amber {
+  border-color: rgba(251, 191, 36, 0.18);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fef3c7;
+}
+
+.apt-model-detail-row {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--apt-muted);
+}
+
+.apt-terminal-hero,
+.apt-console-hero {
+  background:
+    radial-gradient(circle at top right, rgba(73, 230, 255, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(9, 16, 24, 0.98), rgba(7, 12, 18, 0.94));
+}
+
+.apt-terminal-hero::after,
+.apt-console-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto -10% -16% auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(73, 230, 255, 0.12), transparent 70%);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+.apt-terminal-metric,
+.apt-terminal-stat {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 1rem;
+}
+
+.apt-terminal-metric::before,
+.apt-terminal-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(73, 230, 255, 0.06), transparent 34%);
+  pointer-events: none;
+}
+
+.apt-execution-terminal {
+  background:
+    linear-gradient(90deg, rgba(73, 230, 255, 0.04), transparent 18%),
+    linear-gradient(180deg, rgba(10, 17, 24, 0.96), rgba(8, 13, 19, 0.94));
+}
+
+.apt-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.apt-form-label {
+  font-size: 0.77rem;
+  font-weight: 600;
+  color: var(--apt-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.apt-form-display,
+.apt-form-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--apt-text);
+  padding: 0.95rem 1rem;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.apt-form-display {
+  font-size: 0.95rem;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.apt-form-input:focus {
+  outline: none;
+  border-color: rgba(73, 230, 255, 0.22);
+  background: rgba(73, 230, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(73, 230, 255, 0.08);
+}
+
+.apt-choice-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.95rem 1rem;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.apt-choice-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(73, 230, 255, 0.16);
+  background: rgba(73, 230, 255, 0.05);
+}
+
+.apt-choice-card-active {
+  border-color: rgba(73, 230, 255, 0.22);
+  background: rgba(73, 230, 255, 0.08);
+}
+
+.apt-slippage-chip {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(226, 232, 240, 0.88);
+  padding: 0.7rem 1rem;
+  font-size: 0.8rem;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+}
+
+.apt-slippage-chip-active {
+  border-color: rgba(73, 230, 255, 0.22);
+  background: rgba(73, 230, 255, 0.08);
+  color: white;
+}
+
+.apt-summary-box {
+  border: 1px solid rgba(73, 230, 255, 0.16);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(73, 230, 255, 0.07), rgba(255, 255, 255, 0.02));
+  padding: 1rem 1.1rem;
+}
+
+.apt-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  font-size: 0.92rem;
+  color: rgba(226, 232, 240, 0.84);
+}
+
+.apt-summary-row-total {
+  margin-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.9rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+}
+
+.apt-warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  border: 1px solid rgba(251, 113, 133, 0.22);
+  border-radius: 18px;
+  background: rgba(251, 113, 133, 0.08);
+  padding: 0.95rem 1rem;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: rgba(226, 232, 240, 0.84);
+}
+
+.apt-detail-scorecard {
+  background:
+    radial-gradient(circle at top right, rgba(73, 230, 255, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(9, 16, 24, 0.98), rgba(7, 12, 18, 0.94));
+}
+
+.apt-scorecard-tile,
+.apt-context-card,
+.apt-attribution-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.apt-scorecard-tile,
+.apt-context-card {
+  border-radius: 20px;
+  padding: 1rem;
+}
+
+.apt-attribution-card {
+  position: relative;
+  overflow: hidden;
+  border-left: 3px solid rgba(73, 230, 255, 0.72);
+  border-radius: 18px;
+  padding: 1rem 1rem 1rem 1.1rem;
+}
+
+.apt-attribution-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(73, 230, 255, 0.08), transparent 36%);
+  pointer-events: none;
+}
+
+.apt-signal-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1.1rem;
+  right: 1.1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(73, 230, 255, 0.9), rgba(46, 230, 200, 0.9));
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.apt-signal-card:hover::after {
+  opacity: 1;
+}
+
+.apt-signal-icon {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(73, 230, 255, 0.9), rgba(46, 230, 200, 0.82));
+  color: #031017;
+  font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 0 24px rgba(73, 230, 255, 0.16);
+}
+
+.apt-signal-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 190, 197, 0.16);
+  background: rgba(176, 190, 197, 0.06);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.7rem;
+  color: #b4c7d3;
+}
+
+.apt-console-panel {
+  background:
+    linear-gradient(90deg, rgba(73, 230, 255, 0.05), transparent 20%),
+    linear-gradient(180deg, rgba(10, 17, 24, 0.96), rgba(8, 13, 19, 0.94));
+}
+
+.apt-console-status {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+  border: 1px solid rgba(73, 230, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(73, 230, 255, 0.06);
+  padding: 0.95rem 1rem;
+}
+
+.apt-console-status-soft {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.apt-console-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(73, 230, 255, 0.95), rgba(46, 230, 200, 0.82));
+  color: #041017;
+  font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 0 26px rgba(73, 230, 255, 0.18);
+}
+
+.apt-prompt-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.apt-prompt-button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(226, 232, 240, 0.86);
+  padding: 0.95rem 1rem;
+  text-align: left;
+  font-size: 0.9rem;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.apt-prompt-button:hover {
+  transform: translateX(4px);
+  border-color: rgba(73, 230, 255, 0.18);
+  background: rgba(73, 230, 255, 0.06);
+  color: white;
+}
+
+.apt-terminal-message {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1rem 1rem 1.05rem;
+}
+
+.apt-terminal-message-assistant {
+  background: rgba(73, 230, 255, 0.06);
+  border-color: rgba(73, 230, 255, 0.14);
+}
+
+.apt-terminal-message-user {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.apt-console-input {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background: rgba(5, 11, 16, 0.5);
+  padding: 1rem;
+}
+
+.apt-ring {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 0 28px rgba(73, 230, 255, 0.04),
+    0 16px 34px rgba(0, 0, 0, 0.2);
+}
+
+.apt-ring-inner {
+  display: grid;
+  place-items: center;
+  width: calc(100% - 22px);
+  height: calc(100% - 22px);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(73, 230, 255, 0.08), transparent 42%),
+    rgba(7, 12, 17, 0.96);
+  padding: 1.2rem;
+}
+
+.apt-flow-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.9rem 1rem;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+input[type='range'].slider {
   -webkit-appearance: none;
   appearance: none;
 }
 
-input[type="range"].slider::-webkit-slider-thumb {
+input[type='range'].slider::-webkit-slider-runnable-track,
+input[type='range'].slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(73, 230, 255, 0.3), rgba(46, 230, 200, 0.24));
+}
+
+input[type='range'].slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #3b82f6;
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #9cf7ff, #49e6ff);
+  border: 2px solid rgba(5, 11, 16, 0.94);
+  box-shadow: 0 0 0 8px rgba(73, 230, 255, 0.1);
   cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-input[type="range"].slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #3b82f6;
+input[type='range'].slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #9cf7ff, #49e6ff);
+  border: 2px solid rgba(5, 11, 16, 0.94);
+  box-shadow: 0 0 0 8px rgba(73, 230, 255, 0.1);
   cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-input[type="range"].slider::-webkit-slider-thumb:hover {
-  background: #2563eb;
-  transform: scale(1.1);
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-input[type="range"].slider::-moz-range-thumb:hover {
-  background: #2563eb;
-  transform: scale(1.1);
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(73, 230, 255, 0.16);
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 768px) {
+  body::before {
+    background-size: 42px 42px;
+    opacity: 0.08;
+  }
+
+  .apt-panel {
+    border-radius: 20px;
+  }
+
+  .apt-brand-lockup {
+    gap: 0.8rem;
+  }
+
+  .apt-ticker-shell {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .apt-ticker-shell {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1025px) and (max-width: 1280px) {
+  .apt-ticker-shell {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }

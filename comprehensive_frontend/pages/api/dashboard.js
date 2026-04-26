@@ -1,26 +1,9 @@
-// API Proxy for dashboard
 export default async function handler(req, res) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com'
-  const { symbol } = req.query
-  
-  try {
-    // Forward symbol parameter to backend
-    const url = symbol ? `${API_URL}/api/dashboard?symbol=${symbol}` : `${API_URL}/api/dashboard`
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    const data = await response.json()
-    res.status(200).json(data)
-  } catch (error) {
-    console.error('Error fetching dashboard:', error)
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch dashboard',
-      message: error.message 
-    })
-  }
+  res.status(410).json({
+    success: false,
+    error: 'Dashboard proxy deprecated',
+    message:
+      'The legacy dashboard endpoint is retained behind the backend, but it is not part of the current core surface.',
+    suggestedRoutes: ['/api/app/terminal', '/api/market/prices'],
+  });
 }

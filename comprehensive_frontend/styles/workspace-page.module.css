@@ -1,0 +1,422 @@
+.pageShell {
+  position: relative;
+}
+
+.mainContent {
+  position: relative;
+}
+
+.navLinks {
+  flex-wrap: wrap;
+}
+
+.hero {
+  display: grid;
+  gap: 1.2rem;
+  margin-bottom: 2rem;
+}
+
+.eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--color-cyan);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.heroSubtitle {
+  max-width: 58rem;
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.75;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.buttonPrimary,
+.buttonSecondary,
+.linkButtonPrimary,
+.linkButtonSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 1.15rem;
+  border-radius: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.buttonPrimary,
+.linkButtonPrimary {
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-teal));
+  color: var(--color-void);
+  box-shadow: 0 14px 34px rgba(0, 229, 255, 0.18);
+}
+
+.buttonSecondary,
+.linkButtonSecondary {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.buttonPrimary:hover,
+.buttonSecondary:hover,
+.linkButtonPrimary:hover,
+.linkButtonSecondary:hover {
+  transform: translateY(-2px);
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.statCard,
+.sectionPanel,
+.messageCard,
+.themeCard,
+.infoCard {
+  border: 1px solid rgba(121, 155, 180, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(0, 229, 255, 0.05), transparent 30%),
+    linear-gradient(180deg, rgba(10, 18, 28, 0.94), rgba(7, 12, 19, 0.94));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.statCard {
+  padding: 1.1rem 1.15rem;
+  border-radius: 1.1rem;
+}
+
+.statLabel {
+  margin-bottom: 0.55rem;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.statValue {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.statCaption {
+  margin-top: 0.55rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.sectionPanel {
+  padding: 1.35rem;
+  border-radius: 1.35rem;
+  margin-bottom: 2rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.sectionEyebrow {
+  color: var(--color-cyan);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 0.45rem;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  letter-spacing: -0.04em;
+}
+
+.sectionText {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.opportunityGrid,
+.cardGrid,
+.themeGrid,
+.messageList,
+.suggestionGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+.opportunityGrid,
+.cardGrid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.themeGrid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.opportunityCard {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.opportunityBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 190, 197, 0.18);
+  background: rgba(176, 190, 197, 0.08);
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.badgeBullish {
+  color: var(--color-emerald);
+  border-color: rgba(0, 230, 118, 0.28);
+  background: rgba(0, 230, 118, 0.08);
+}
+
+.badgeBearish {
+  color: var(--color-bearish);
+  border-color: rgba(255, 82, 82, 0.28);
+  background: rgba(255, 82, 82, 0.08);
+}
+
+.opportunitySetup {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.opportunityActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.note {
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  background: rgba(0, 229, 255, 0.06);
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.bulletList {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.bulletList li {
+  padding-left: 1rem;
+  position: relative;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.bulletList li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.72rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-cyan);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+}
+
+.themeCard,
+.infoCard,
+.messageCard {
+  padding: 1rem;
+  border-radius: 1.15rem;
+}
+
+.themeCardHeader,
+.infoCardHeader,
+.messageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.themeLabel,
+.infoLabel,
+.messageRole {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.themeScore,
+.infoValue {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.themeTrack {
+  height: 0.55rem;
+  margin-top: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.themeFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-cyan), var(--color-emerald));
+}
+
+.infoTitle,
+.messageTitle {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.infoText,
+.messageBody {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.messageUser {
+  border-color: rgba(124, 77, 255, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(124, 77, 255, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(18, 20, 32, 0.96), rgba(10, 14, 22, 0.96));
+}
+
+.messageAssistant {
+  border-color: rgba(0, 229, 255, 0.18);
+}
+
+.messageStack {
+  display: grid;
+  gap: 1rem;
+}
+
+.suggestionGrid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.suggestionChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  text-align: center;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.suggestionChip:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 229, 255, 0.22);
+  color: var(--color-cyan);
+}
+
+.splitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+  gap: 1rem;
+}
+
+.performanceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.quietText {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 980px) {
+  .splitGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .heroActions,
+  .opportunityActions {
+    flex-direction: column;
+  }
+
+  .buttonPrimary,
+  .buttonSecondary,
+  .linkButtonPrimary,
+  .linkButtonSecondary {
+    width: 100%;
+  }
+
+  .sectionHeader,
+  .messageHeader,
+  .themeCardHeader,
+  .infoCardHeader {
+    flex-direction: column;
+  }
+}
