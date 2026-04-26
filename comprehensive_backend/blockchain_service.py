@@ -4,50 +4,47 @@ Handles smart contract interactions for AITradeUSDT token
 """
 from web3 import Web3
 import json
-import os
 from pathlib import Path
 from typing import Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
+AMOY_NETWORK_NAME = "Polygon Amoy Testnet"
+AMOY_CHAIN_ID = 80002
+AMOY_EXPLORER_URL = "https://amoy.polygonscan.com"
+AMOY_RPCS = [
+    "https://rpc-amoy.polygon.technology",
+    "https://polygon-amoy-bor-rpc.publicnode.com",
+]
+
 class BlockchainService:
     def __init__(self):
-        # Polygon Amoy Testnet RPCs (fallback support)
-        self.rpcs = [
-            "https://bsc-testnet.publicnode.com",
-            "https://data-seed-prebsc-1-s1.binance.org:8545",
-            "https://data-seed-prebsc-2-s1.binance.org:8545",
-            "https://bsc-testnet.public.blastapi.io"
-        ]
-        
-        self.chain_id = 97
+        self.rpcs = list(AMOY_RPCS)
+        self.chain_id = AMOY_CHAIN_ID
         self.w3 = None
         self.contract = None
         self.contract_address = None
         self.connected = False
-        
-        # Try to connect
+
         self._connect()
-        
-        # Load contract if deployed
         self._load_contract()
     
     def _connect(self):
-        """Connect to Polygon Amoy Testnet with fallback"""
+        """Connect to Polygon Amoy Testnet with fallback RPCs."""
         for rpc in self.rpcs:
             try:
                 w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={'timeout': 10}))
                 if w3.is_connected():
                     self.w3 = w3
                     self.connected = True
-                    logger.info(f"✓ Connected to Polygon Amoy Testnet: {rpc}")
+                    logger.info(f"✓ Connected to {AMOY_NETWORK_NAME}: {rpc}")
                     return True
             except Exception as e:
                 logger.warning(f"Failed to connect to {rpc}: {e}")
                 continue
-        
-        logger.error("Failed to connect to any Polygon Amoy Testnet RPC")
+
+        logger.error(f"Failed to connect to any {AMOY_NETWORK_NAME} RPC")
         return False
     
     def _load_contract(self):
@@ -55,15 +52,18 @@ class BlockchainService:
         deployment_file = Path(__file__).parent.parent / "blockchain" / "deployment.json"
         
         if not deployment_file.exists():
-            logger.warning("Contract not deployed yet. Run: cd blockchain && python deploy.py")
+            logger.warning("Contract artifact missing at blockchain/deployment.json")
             return False
         
         try:
             with open(deployment_file, 'r') as f:
                 deployment = json.load(f)
             
-            self.contract_address = deployment['contract_address']
+            self.contract_address = deployment.get('contract_address') or deployment.get('contractAddress')
             abi = deployment['abi']
+
+            if not self.contract_address:
+                raise KeyError("deployment.json is missing contract address")
             
             if self.w3:
                 self.contract = self.w3.eth.contract(
@@ -164,9 +164,9 @@ class BlockchainService:
                 )),
                 'contract_address': self.contract_address,
                 'deployed': True,
-                'network': 'Polygon Amoy Testnet',
+                'network': AMOY_NETWORK_NAME,
                 'chain_id': self.chain_id,
-                'explorer': f'https://testnet.bscscan.com/address/{self.contract_address}'
+                'explorer': f'{AMOY_EXPLORER_URL}/address/{self.contract_address}'
             }
         except Exception as e:
             logger.error(f"Failed to get token info: {e}")
@@ -181,10 +181,10 @@ class BlockchainService:
             return {
                 'connected': True,
                 'chain_id': self.chain_id,
-                'network': 'Polygon Amoy Testnet',
+                'network': AMOY_NETWORK_NAME,
                 'latest_block': self.w3.eth.block_number,
                 'gas_price': self.w3.from_wei(self.w3.eth.gas_price, 'gwei'),
-                'explorer': 'https://testnet.bscscan.com'
+                'explorer': AMOY_EXPLORER_URL
             }
         except Exception as e:
             logger.error(f"Failed to get network info: {e}")

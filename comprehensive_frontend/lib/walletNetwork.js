@@ -1,16 +1,4 @@
 export const DEFAULT_CHAIN_CONFIGS = {
-  97: {
-    chainId: '0x61',
-    chainName: 'BNB Smart Chain Testnet',
-    nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
-    rpcUrls: [
-      'https://bsc-testnet.publicnode.com',
-      'https://data-seed-prebsc-1-s1.binance.org:8545',
-      'https://data-seed-prebsc-2-s1.binance.org:8545',
-    ],
-    blockExplorerUrls: ['https://testnet.bscscan.com'],
-    faucetUrl: 'https://www.bnbchain.org/en/testnet-faucet',
-  },
   80002: {
     chainId: '0x13882',
     chainName: 'Polygon Amoy Testnet',
@@ -53,8 +41,8 @@ export function normalizeChainId(value) {
   return parsed == null || Number.isNaN(parsed) ? null : `0x${parsed.toString(16)}`;
 }
 
-export function getDefaultChainConfig(chainId = 97) {
-  const base = DEFAULT_CHAIN_CONFIGS[chainId] || DEFAULT_CHAIN_CONFIGS[97];
+export function getDefaultChainConfig(chainId = 80002) {
+  const base = DEFAULT_CHAIN_CONFIGS[chainId] || DEFAULT_CHAIN_CONFIGS[80002];
 
   return {
     chainId: normalizeChainId(base.chainId),
@@ -72,8 +60,10 @@ export function resolveBlockchainConfig(payload) {
   const token = data.token || {};
   const chainId =
     parseChainIdValue(token.chain_id) ||
+    parseChainIdValue(token.chainId) ||
     parseChainIdValue(network.chain_id) ||
-    97;
+    parseChainIdValue(network.chainId) ||
+    80002;
   const base = getDefaultChainConfig(chainId);
   const explorerUrl =
     token.explorer ||
@@ -91,7 +81,7 @@ export function resolveBlockchainConfig(payload) {
       name: token.name || FALLBACK_TOKEN.name,
       symbol: token.symbol || FALLBACK_TOKEN.symbol,
       decimals: Number(token.decimals || FALLBACK_TOKEN.decimals),
-      contractAddress: token.contract_address || null,
+      contractAddress: token.contract_address || token.contractAddress || null,
       explorerUrl,
     },
   };

@@ -1,10 +1,11 @@
 {
-  "contract_address": "0x00D6B7946E0c636Be59f79356e73fe4E42c60a33",
-  "deployer_address": "0xC3EcE9AC328CB232dDB0BC677d2e980a1a3D3974",
-  "transaction_hash": "076a6f816198a3bbc01ae497964e07468c992df34446e897371d9ff56594bb2e",
-  "block_number": 76518815,
-  "gas_used": 3431273,
-  "deployment_cost_bnb": "0.0003431273",
+  "network": "Polygon Amoy Testnet",
+  "chainId": 80002,
+  "contractAddress": "0xA2E0F4A542b700f437c27Ce28B31499023d9a53A",
+  "deployerAddress": "0xD25968704BBA19FBc1E9A9dfbb2B4460FbD8D06B",
+  "transactionHash": "a29ac9cb1a00bc66142bea3a3f6e672f9cb62851cc36a6580b72b10497af85d5",
+  "blockNumber": 30531796,
+  "gasUsed": 3554358,
   "abi": [
     {
       "inputs": [
@@ -833,10 +834,11 @@
       "type": "function"
     }
   ],
-  "network": "BSC Testnet",
-  "chain_id": 97,
-  "rpc_url": "https://bsc-testnet.publicnode.com",
-  "initial_supply": 1000000000,
-  "faucet_amount": 100,
-  "faucet_cooldown": 24
+  "version": "V2",
+  "features": [
+    "ERC20",
+    "Faucet",
+    "Trading",
+    "Settlement"
+  ]
 }

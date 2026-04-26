@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ try:
     logger.info("✓ TensorFlow available")
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+    Sequential = Any
     logger.warning("TensorFlow not installed. LSTM features disabled.")
 
 

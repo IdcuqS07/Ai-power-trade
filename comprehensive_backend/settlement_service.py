@@ -5,7 +5,6 @@ Monitors and settles trades automatically
 import asyncio
 import logging
 from web3 import Web3
-from datetime import datetime
 import json
 from pathlib import Path
 import os
@@ -15,43 +14,42 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+AMOY_CHAIN_ID = 80002
+AMOY_RPCS = [
+    "https://rpc-amoy.polygon.technology",
+    "https://polygon-amoy-bor-rpc.publicnode.com",
+]
+
 class SettlementService:
     def __init__(self):
-        # Load deployment info
         deployment_file = Path(__file__).parent.parent / "blockchain" / "deployment.json"
         with open(deployment_file, 'r') as f:
             deployment = json.load(f)
-        
-        self.contract_address = deployment['contract_address']
+
+        self.contract_address = deployment.get('contract_address') or deployment.get('contractAddress')
         self.abi = deployment['abi']
-        
-        # Connect to BSC Testnet
-        self.rpcs = [
-            "https://bsc-testnet.publicnode.com",
-            "https://data-seed-prebsc-1-s1.binance.org:8545"
-        ]
-        
+
+        self.rpcs = list(AMOY_RPCS)
         self.w3 = None
         self.contract = None
         self.account = None
-        
+
         self._connect()
         self._load_account()
     
     def _connect(self):
-        """Connect to BSC Testnet"""
+        """Connect to Polygon Amoy Testnet."""
         for rpc in self.rpcs:
             try:
                 w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={'timeout': 10}))
-                
-                # Inject POA middleware for BSC (handles extraData field)
+
+                # Polygon Amoy also benefits from the POA middleware on some providers.
                 try:
                     from web3.middleware import ExtraDataToPOAMiddleware
                     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-                except:
-                    # Fallback for older web3.py versions
+                except Exception:
                     pass
-                
+
                 if w3.is_connected():
                     self.w3 = w3
                     self.contract = w3.eth.contract(
@@ -68,13 +66,14 @@ class SettlementService:
     
     def _load_account(self):
         """Load owner account for settlement"""
-        # For demo: Use environment variable or skip if not available
         private_key = os.getenv('OWNER_PRIVATE_KEY')
-        if private_key:
+        if private_key and self.w3:
             if not private_key.startswith('0x'):
                 private_key = '0x' + private_key
             self.account = self.w3.eth.account.from_key(private_key)
             logger.info(f"✓ Settlement account loaded: {self.account.address}")
+        elif private_key:
+            logger.warning("⚠ OWNER_PRIVATE_KEY found but Polygon Amoy RPC connection is unavailable")
         else:
             logger.warning("⚠ No OWNER_PRIVATE_KEY found - auto-settlement disabled")
             logger.info("💡 Set OWNER_PRIVATE_KEY in .env to enable auto-settlement")
@@ -144,7 +143,7 @@ class SettlementService:
                 trade_id,
                 profit_loss
             ).build_transaction({
-                'chainId': 97,
+                'chainId': AMOY_CHAIN_ID,
                 'gas': 200000,
                 'gasPrice': self.w3.eth.gas_price,
                 'nonce': nonce,

@@ -41,6 +41,10 @@ def test_model_status():
             # Check CoinGecko
             cg = data["data"].get("coingecko", {})
             print(f"  CoinGecko: {'Available' if cg.get('available') else 'Unavailable'}")
+
+            # Check SoSoValue
+            soso = data["data"].get("sosovalue", {})
+            print(f"  SoSoValue: {'Enabled' if soso.get('enabled') else 'Not Configured'}")
             
             return True
         else:
@@ -147,6 +151,8 @@ def test_enhanced_prediction():
             print(f"  Level: {pred.get('confidence_level', 'N/A')}")
             print(f"  Color: {pred.get('confidence_color', 'N/A')}")
             print(f"  Models Used: {pred.get('models_used', 0)}")
+            print(f"  Alignment: {pred.get('signal_alignment', 'N/A')}")
+            print(f"  Confirmation Required: {pred.get('confirmation_required', False)}")
             
             # Show model breakdown
             if 'models' in pred:
@@ -157,6 +163,9 @@ def test_enhanced_prediction():
                 if 'random_forest' in pred['models']:
                     rf = pred['models']['random_forest']
                     print(f"    Random Forest: {rf.get('signal', 'N/A')}")
+                if 'sosovalue' in pred['models']:
+                    soso = pred['models']['sosovalue']
+                    print(f"    SoSoValue: {soso.get('macro_regime', 'N/A')} / catalyst {soso.get('catalyst_score', 0):.1f}")
             
             return True
         else:

@@ -16,9 +16,20 @@ import hashlib
 import numpy as np
 import logging
 import time
+from dotenv import load_dotenv
 
-# Import WEEX API, Binance API, Binance Trading and Backtesting
-from weex_api import WeexAPI
+# Configure logging early so imported modules can use it safely
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+PRICE_SYMBOLS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"]
+
+# Import Binance API, Binance Trading and Backtesting
 from binance_api import binance_api
 from binance_trading import binance_trading
 from backtesting import BacktestEngine
@@ -36,17 +47,19 @@ except ImportError as e:
     ENHANCED_AI_AVAILABLE = False
     logger.warning(f"Enhanced AI not available: {e}")
 
+try:
+    from sosovalue_service import sosovalue_service
+    SOSOVALUE_AVAILABLE = True
+    logger.info("✓ SoSoValue service loaded")
+except Exception as e:
+    SOSOVALUE_AVAILABLE = False
+    sosovalue_service = None
+    logger.warning(f"SoSoValue service not available: {e}")
+
 # Import Database and Auth
 from database import init_db
 from auth_routes import router as auth_router
 from user_routes import router as user_router
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI Trading Platform - Comprehensive",
@@ -66,6 +79,8 @@ app.add_middleware(
 async def startup_event():
     init_db()
     logger.info("✓ Database initialized")
+    seed_price_history()
+    asyncio.create_task(initialize_price_history_async())
 
 # Include auth and user routes
 app.include_router(auth_router)
@@ -78,16 +93,13 @@ USE_LIVE_DATA = True
 
 logger.info("✓ Using Binance API for all market data")
 
-# Keep WEEX API for backward compatibility but don't use it
-weex_api = WeexAPI()
-
 # ============ Global State ============
 trading_state = {
     "balance": 10000.0,
     "pnl": 0.0,
     "positions": [],
     "price_history": {
-        "BTC": [], "ETH": [], "BNB": [], "SOL": [], "XRP": [], "ADA": [], "MATIC": [], "LINK": []
+        symbol: [] for symbol in PRICE_SYMBOLS
     },
     "trades_today": 0,
     "daily_pnl": 0.0,
@@ -138,10 +150,7 @@ wallet_state = {
 # Initialize price history
 def initialize_price_history():
     """Initialize price history from Binance"""
-    # Trading Pairs - Top 8 coins (Best Balance)
-    symbols = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"]
-    
-    for symbol in symbols:
+    for symbol in PRICE_SYMBOLS:
         # Get historical data from Binance
         pair = f"{symbol}/USDT"
         klines = binance_api.get_klines(pair, interval='1h', limit=50)
@@ -160,8 +169,20 @@ def _generate_simulated_history(symbol: str) -> List[float]:
     base = base_prices.get(symbol, 1000)
     return [base + random.uniform(-base * 0.02, base * 0.02) for _ in range(50)]
 
-# Initialize on startup
-initialize_price_history()
+def seed_price_history():
+    """Seed history so the API can respond immediately during local startup."""
+    for symbol in PRICE_SYMBOLS:
+        if not trading_state["price_history"][symbol]:
+            trading_state["price_history"][symbol] = _generate_simulated_history(symbol)
+
+    logger.info("✓ Seeded simulated price history for fast startup")
+
+async def initialize_price_history_async():
+    """Refresh history in the background without delaying server startup."""
+    try:
+        await asyncio.to_thread(initialize_price_history)
+    except Exception as e:
+        logger.warning(f"Background price history refresh failed: {e}")
 
 # ============ Models ============
 class TradeRequest(BaseModel):
@@ -601,27 +622,10 @@ def get_cached_performance():
         # TODO: Update in background thread
         return performance_cache["data"]
     
-    # First time or no cache - use quick estimation
-    try:
-        from settlement_service import settlement_service
-        trade_counter = settlement_service.contract.functions.tradeCounter().call()
-        
-        # For dashboard, just show trade count - detailed stats available in /api/trades/performance
-        performance = {
-            "total_trades": trade_counter,
-            "winning_trades": 0,
-            "losing_trades": 0,
-            "win_rate": 0,
-            "total_profit": 0,
-            "avg_profit": 0
-        }
-        
-        performance_cache["data"] = performance
-        performance_cache["timestamp"] = current_time
-        return performance
-    except Exception as e:
-        logger.error(f"Error getting performance: {e}")
-        return {"total_trades": 0, "winning_trades": 0, "losing_trades": 0, "win_rate": 0, "total_profit": 0, "avg_profit": 0}
+    performance = trading_engine.get_performance()
+    performance_cache["data"] = performance
+    performance_cache["timestamp"] = current_time
+    return performance
 
 # ============ API Endpoints ============
 
@@ -755,13 +759,10 @@ async def get_prices():
         return {"success": True, "data": prices_cache["data"], "source": "cache"}
     
     # Trading Pairs - Top 8 coins (Best Balance)
-    SYMBOLS = [
-        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"
-    ]
     prices = {}
     
     # Get live data from Binance
-    for symbol in SYMBOLS:
+    for symbol in PRICE_SYMBOLS:
         pair = f"{symbol}/USDT"
         stats = binance_api.get_24h_stats(pair)
         
@@ -800,6 +801,9 @@ async def get_prices():
 def _get_simulated_price(symbol: str) -> Dict:
     """Get simulated price for a symbol"""
     history = trading_state["price_history"][symbol]
+    if not history:
+        history.extend(_generate_simulated_history(symbol))
+
     new_price = history[-1] + random.uniform(-history[-1] * 0.01, history[-1] * 0.01)
     history.append(new_price)
     if len(history) > 100:
@@ -2253,6 +2257,112 @@ async def get_trending_coins():
         raise
     except Exception as e:
         logger.error(f"Trending API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def require_sosovalue_service(check_enabled: bool = True):
+    """Ensure the SoSoValue service is importable and optionally enabled."""
+    if not SOSOVALUE_AVAILABLE or not sosovalue_service:
+        raise HTTPException(status_code=503, detail="SoSoValue backend service is not available")
+
+    if check_enabled and not sosovalue_service.is_available():
+        raise HTTPException(status_code=503, detail=sosovalue_service.get_unavailable_reason())
+
+    return sosovalue_service
+
+
+@app.get("/api/sosovalue/status")
+async def get_sosovalue_status():
+    """Get SoSoValue backend integration status."""
+    service = require_sosovalue_service(check_enabled=False)
+    return {
+        "success": True,
+        "data": service.get_service_status()
+    }
+
+
+@app.get("/api/sosovalue/currencies")
+async def get_sosovalue_currencies():
+    """Get normalized list of SoSoValue supported currencies."""
+    service = require_sosovalue_service()
+
+    try:
+        currencies = service.get_listed_currencies()
+        return {
+            "success": True,
+            "data": currencies,
+            "count": len(currencies)
+        }
+    except Exception as e:
+        logger.error(f"SoSoValue currencies error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sosovalue/news")
+async def get_sosovalue_news(page_num: int = 1, page_size: int = 10):
+    """Get general SoSoValue featured news."""
+    service = require_sosovalue_service()
+
+    try:
+        feed = service.get_news_feed(page_num=page_num, page_size=page_size)
+        return {
+            "success": True,
+            "data": feed
+        }
+    except Exception as e:
+        logger.error(f"SoSoValue news feed error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sosovalue/news/{symbol}")
+async def get_sosovalue_news_by_symbol(symbol: str, page_num: int = 1, page_size: int = 5):
+    """Get SoSoValue featured news for one asset symbol."""
+    service = require_sosovalue_service()
+
+    try:
+        feed = service.get_news_feed(symbol=symbol, page_num=page_num, page_size=page_size)
+        return {
+            "success": True,
+            "data": feed
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"SoSoValue symbol news error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sosovalue/etf-metrics")
+async def get_sosovalue_etf_metrics(etf_type: str = "us-btc-spot"):
+    """Get normalized SoSoValue ETF metrics."""
+    service = require_sosovalue_service()
+
+    try:
+        metrics = service.get_etf_metrics(etf_type=etf_type)
+        return {
+            "success": True,
+            "data": metrics
+        }
+    except Exception as e:
+        logger.error(f"SoSoValue ETF metrics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sosovalue/research-context/{symbol}")
+async def get_sosovalue_research_context(symbol: str, news_limit: int = 5):
+    """Get normalized research context for one asset."""
+    service = require_sosovalue_service()
+
+    try:
+        context = service.get_research_context(symbol=symbol, news_limit=news_limit)
+        return {
+            "success": True,
+            "data": context
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"SoSoValue research context error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

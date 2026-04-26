@@ -640,7 +640,7 @@ export default async function handler(req, res) {
     blockchainResult.status === 'fulfilled'
       ? resolveBlockchainConfig(blockchainResult.value)
       : {
-          network: getDefaultChainConfig(97),
+          network: getDefaultChainConfig(80002),
           token: FALLBACK_TOKEN,
         };
   const blockchainStatus =
