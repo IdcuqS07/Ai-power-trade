@@ -1,0 +1,11 @@
+{
+  "name": "ai-power-trade",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd comprehensive_frontend && npm run dev",
+    "build": "cd comprehensive_frontend && npm run build",
+    "start": "cd comprehensive_frontend && npm start",
+    "install": "cd comprehensive_frontend && npm install"
+  }
+}
