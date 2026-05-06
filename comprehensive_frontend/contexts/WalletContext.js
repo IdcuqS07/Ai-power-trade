@@ -218,7 +218,9 @@ export function WalletProvider({ children }) {
     }
 
     try {
+      console.log('[WalletContext] Fetching balance for:', nextAddress);
       const payload = await fetchWalletJson(`blockchain/balance/${nextAddress}`);
+      console.log('[WalletContext] Balance response:', payload);
       const data = payload?.data || {};
 
       safeSetWalletState((current) => ({
@@ -228,8 +230,10 @@ export function WalletProvider({ children }) {
         cooldownSeconds: Number(data.cooldown_seconds || 0),
       }));
 
+      console.log('[WalletContext] Balance updated:', data.balance);
       return data;
     } catch (error) {
+      console.error('[WalletContext] Balance fetch failed:', error);
       console.warn('Wallet balance refresh failed, trying direct RPC fallback:', error);
       
       // Fallback: query balance directly from wallet provider
@@ -250,10 +254,10 @@ export function WalletProvider({ children }) {
             cooldownSeconds: 0,
           }));
           
-          console.info('Balance loaded from direct RPC:', balanceEth.toFixed(4));
+          console.info('[WalletContext] Balance loaded from direct RPC:', balanceEth.toFixed(4));
           return { balance: balanceEth };
         } catch (rpcError) {
-          console.warn('Direct RPC balance query also failed:', rpcError);
+          console.warn('[WalletContext] Direct RPC balance query also failed:', rpcError);
         }
       }
       

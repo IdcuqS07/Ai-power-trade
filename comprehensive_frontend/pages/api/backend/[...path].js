@@ -28,10 +28,12 @@ function getRequestTimeoutMs(pathSegments = []) {
   const joinedPath = normalizedPath.join('/');
 
   if (
+    joinedPath.startsWith('blockchain/') ||
     joinedPath.startsWith('sodex/') ||
     joinedPath.startsWith('ssi/') ||
     joinedPath.startsWith('ai/') ||
     joinedPath.startsWith('market/') ||
+    joinedPath === 'blockchain' ||
     joinedPath === 'sodex' ||
     joinedPath === 'ssi' ||
     joinedPath === 'trades/history' ||
