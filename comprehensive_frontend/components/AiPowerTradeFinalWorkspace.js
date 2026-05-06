@@ -122,6 +122,28 @@ function formatSignedPercent(value, digits = 1) {
   return `${amount >= 0 ? '+' : ''}${amount.toFixed(digits)}%`;
 }
 
+function normalizeSodexTypedSignature(signature) {
+  const normalized = String(signature || '').trim();
+  if (!normalized) {
+    throw new Error('Wallet did not return an EIP-712 signature.');
+  }
+
+  const hexBody = normalized.replace(/^0x/i, '');
+  if (!/^[0-9a-fA-F]+$/.test(hexBody)) {
+    throw new Error('Wallet returned a non-hex SoDEX signature.');
+  }
+
+  if (hexBody.length === 130) {
+    return `0x01${hexBody}`;
+  }
+
+  if (hexBody.length === 132 && hexBody.startsWith('01')) {
+    return `0x${hexBody}`;
+  }
+
+  throw new Error('Wallet returned an unexpected SoDEX signature length.');
+}
+
 function formatTokenAmount(value) {
   const amount = Number(value);
 
@@ -255,16 +277,48 @@ function createFallbackTerminalData() {
         symbol: 'atUSDT',
       },
     },
+    sodex: {
+      provider: 'SoDEX',
+      configured: false,
+      mode: 'preview',
+      providerLabel: 'Preview Fallback',
+      executionLabel: 'Preview only',
+      readinessTone: 'var(--text-tertiary)',
+      marketType: 'spot',
+      defaultAccountId: null,
+      signingChainId: 138565,
+      isTestnet: true,
+      browserSigningReady: false,
+      canPrepareOrder: false,
+      baseUrl: null,
+      apiKeyMode: 'browser_wallet',
+      browserWalletApiKeySupported: true,
+      missingRequirements: ['SODEX_API_URL', 'SODEX_ACCOUNT_ID'],
+      readinessMessage:
+        'Set SODEX_API_URL and SODEX_ACCOUNT_ID in the backend to enable browser-signed SoDEX routing.',
+      signingNetwork: {
+        chainId: '0x21d45',
+        chainName: 'ValueChain Testnet',
+        nativeCurrency: {
+          name: 'SOSO',
+          symbol: 'SOSO',
+          decimals: 18,
+        },
+        rpcUrls: [],
+        blockExplorerUrls: [],
+        source: 'derived',
+      },
+    },
     readiness: {
-      statusLabel: 'READY',
-      statusTone: 'var(--green)',
+      statusLabel: 'PREVIEW',
+      statusTone: 'var(--text-tertiary)',
       oracle: {
-        label: 'Aligned',
-        tone: 'var(--green)',
+        label: 'Preview',
+        tone: 'var(--text-tertiary)',
       },
       contract: {
-        label: 'Ready',
-        tone: 'var(--purple)',
+        label: 'Preview',
+        tone: 'var(--yellow)',
       },
       confirmation: {
         label: 'Cleared',
@@ -275,6 +329,7 @@ function createFallbackTerminalData() {
         tone: 'var(--green)',
       },
       estimatedGasLabel: '~0.003 MATIC',
+      executionModeLabel: 'Internal fallback',
       networkLabel: 'Polygon Amoy Testnet',
     },
     updatedAt: FALLBACK_UPDATED_AT,
@@ -348,6 +403,31 @@ function getModelBreakdown(confidencePercent, signalChange) {
 
 function getMetricTone(value) {
   return typeof value === 'string' && value ? value : 'var(--text-secondary)';
+}
+
+function getResearchScoreTone(score) {
+  if (score >= 75) {
+    return 'var(--green)';
+  }
+
+  if (score >= 50) {
+    return 'var(--yellow)';
+  }
+
+  return 'var(--red)';
+}
+
+function getResearchRegimeTone(regime) {
+  switch (String(regime || '').toUpperCase()) {
+    case 'BULLISH':
+      return 'var(--green)';
+    case 'DEFENSIVE':
+      return 'var(--red)';
+    case 'NEUTRAL':
+      return 'var(--yellow)';
+    default:
+      return 'var(--text-tertiary)';
+  }
 }
 
 function getTopMovers(signals, activeSymbol) {
@@ -666,6 +746,31 @@ function MainDecisionSection({
     label: 'Cleared',
     tone: 'var(--green)',
   };
+  const researchContext = activeSignal?.researchContext || null;
+  const researchAvailable = Boolean(researchContext?.available);
+  const researchScore = clamp(Math.round(Number(researchContext?.catalyst_score || 0)), 0, 100);
+  const researchScoreTone = getResearchScoreTone(researchScore);
+  const researchRegime = String(researchContext?.macro_regime || 'UNAVAILABLE').toUpperCase();
+  const researchRegimeTone = getResearchRegimeTone(researchRegime);
+  const researchHeadlineCount = Math.max(
+    0,
+    Number(
+      researchContext?.news_count ||
+        (Array.isArray(researchContext?.latest_news) ? researchContext.latest_news.length : 0)
+    )
+  );
+  const researchLabel = String(researchContext?.catalyst_label || 'Preview').toUpperCase();
+  const researchStories = Array.isArray(researchContext?.latest_news)
+    ? researchContext.latest_news.slice(0, 2)
+    : [];
+  const researchRationale =
+    Array.isArray(researchContext?.rationale) && researchContext.rationale.length
+      ? researchContext.rationale[0]
+      : researchContext?.error
+        ? researchContext.error
+        : researchAvailable
+          ? `${activeSymbol} research context is live through SoSoValue.`
+          : `SoSoValue research will appear here once the live overlay returns for ${activeSymbol}.`;
 
   return (
     <main className={styles.main}>
@@ -783,6 +888,79 @@ function MainDecisionSection({
                 <span className={styles['compact-stat-label']}>Avg Hold</span>
               </div>
             </div>
+
+            <div className={styles['research-panel']}>
+              <div className={styles['research-panel-header']}>
+                <span className={styles['insight-title']} style={{ margin: 0 }}>
+                  SoSoValue Research
+                </span>
+                <span
+                  className={classes(
+                    'status-pill',
+                    researchAvailable ? 'status-pill-live' : 'status-pill-preview'
+                  )}
+                >
+                  {researchAvailable ? 'Live' : 'Preview'}
+                </span>
+              </div>
+
+              <div className={styles['research-metrics']}>
+                <div className={styles['research-metric']}>
+                  <span
+                    className={styles['research-metric-value']}
+                    style={{ color: researchAvailable ? researchScoreTone : 'var(--text-tertiary)' }}
+                  >
+                    {researchAvailable ? `${researchScore}/100` : '--'}
+                  </span>
+                  <span className={styles['research-metric-label']}>Catalyst</span>
+                </div>
+                <div className={styles['research-metric']}>
+                  <span
+                    className={styles['research-metric-value']}
+                    style={{ color: researchAvailable ? researchRegimeTone : 'var(--text-tertiary)' }}
+                  >
+                    {researchAvailable ? researchRegime : 'UNAVAILABLE'}
+                  </span>
+                  <span className={styles['research-metric-label']}>Regime</span>
+                </div>
+                <div className={styles['research-metric']}>
+                  <span
+                    className={styles['research-metric-value']}
+                    style={{ color: researchAvailable ? 'var(--cyan)' : 'var(--text-tertiary)' }}
+                  >
+                    {researchAvailable ? researchHeadlineCount : '--'}
+                  </span>
+                  <span className={styles['research-metric-label']}>Headlines</span>
+                </div>
+              </div>
+
+              <div className={styles['research-rationale']}>{researchRationale}</div>
+
+              {researchStories.length ? (
+                <div className={styles['research-story-list']}>
+                  {researchStories.map((article, index) => (
+                    <div
+                      key={`${article.title || 'research'}-${index}`}
+                      className={styles['research-story']}
+                    >
+                      <div className={styles['research-story-header']}>
+                        <span className={styles['research-story-tag']}>
+                          {article.category_label || researchLabel}
+                        </span>
+                        <span className={styles['research-story-time']}>
+                          {formatElapsed(article.published_at)}
+                        </span>
+                      </div>
+                      <div className={styles['research-story-title']}>{article.title}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles['research-empty']}>
+                  No live research headlines yet for {activeSymbol}.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -874,6 +1052,12 @@ function MainDecisionSection({
               <strong>{readinessState.estimatedGasLabel || `~0.003 ${nativeSymbol}`}</strong>
             </div>
             <div className={styles['info-row']}>
+              <span>Execution Route</span>
+              <strong style={{ color: readinessState.sodex?.tone || 'var(--text)' }}>
+                {readinessState.executionModeLabel || 'Internal fallback'}
+              </strong>
+            </div>
+            <div className={styles['info-row']}>
               <span>Network</span>
               <strong style={{ color: 'var(--purple)' }}>
                 {readinessState.networkLabel || previewNetwork?.chainName || 'Execution network'}
@@ -916,6 +1100,7 @@ function MainDecisionSection({
 function RightExecutionPanel({
   wallet,
   previewNetwork,
+  sodexStatus,
   tokenSymbol,
   availableBalance,
   hasLiveBalance,
@@ -942,14 +1127,41 @@ function RightExecutionPanel({
       ? 'Wallet connected'
       : 'Wallet ready';
   const walletSummary = wallet.isConnected ? shortenAddress(wallet.account) : 'No wallet connected';
+  const ssiProfile = wallet.ssiProfile || null;
+  const ssiProgramName = ssiProfile?.program?.name || 'SSI';
+  const ssiTierLabel = ssiProfile?.holding?.tier?.label || (wallet.isConnected ? 'Syncing' : 'Preview');
+  const ssiScore = Number(ssiProfile?.participation?.score);
+  const ssiApr = Number(ssiProfile?.rewards?.estimated_program_apr);
+  const ssiStakableBalance = Number(ssiProfile?.holding?.stakable_balance);
+  const ssiStakingReady = Boolean(ssiProfile?.holding?.staking_ready);
+  const ssiPrimaryAction =
+    ssiProfile?.actions?.[0] ||
+    (wallet.isConnected
+      ? 'SSI participation is syncing from token holdings and execution history.'
+      : 'Connect a wallet to calculate SSI participation from holdings and execution flow.');
   const readinessState = readiness || {};
+  const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
+  const sodexConfigured = Boolean(sodexStatus?.configured);
+  const sodexTone = sodexStatus?.readinessTone || 'var(--text-tertiary)';
+  const sodexSigningChainId = parseChainIdValue(
+    sodexStatus?.signingNetwork?.chainId || sodexStatus?.signingChainId
+  );
+  const needsSodexSigningSwitch = Boolean(
+    liveSodexReady &&
+      wallet.isConnected &&
+      sodexSigningChainId &&
+      chainId &&
+      sodexSigningChainId !== chainId
+  );
   const contractStatus =
     executionState === 'success'
       ? 'Executed'
       : executionState === 'submitting'
         ? 'Submitting'
-        : wallet.isWrongNetwork
+        : !liveSodexReady && wallet.isWrongNetwork
           ? 'Switch Network'
+          : needsSodexSigningSwitch
+            ? 'Switch for Signing'
           : wallet.isConnected
             ? readinessState.contract?.label || 'Ready'
             : 'Preview';
@@ -966,13 +1178,19 @@ function RightExecutionPanel({
       ? feedback?.tradeId || 'Open Trade History'
       : executionState === 'submitting'
         ? 'Waiting for execution confirmation'
-        : actionLabel === 'HOLD'
+      : actionLabel === 'HOLD'
           ? 'Wait for directional confirmation'
-          : wallet.isWrongNetwork
+          : !liveSodexReady && wallet.isWrongNetwork
             ? 'Switch network to continue'
-            : wallet.isConnected
-              ? 'Review and approve in wallet'
-              : 'Connect wallet to continue';
+            : needsSodexSigningSwitch
+              ? `Switch to ${sodexStatus?.signingNetwork?.chainName || 'ValueChain'} to sign the SoDEX order`
+            : liveSodexReady
+              ? wallet.isConnected
+                ? 'Sign the SoDEX testnet order in wallet'
+                : 'Connect wallet to sign the SoDEX testnet order'
+              : wallet.isConnected
+                ? 'Run through the current fallback execution route'
+                : 'Connect wallet to continue';
   const stepsStatus =
     executionState === 'success'
       ? 'Executed'
@@ -995,6 +1213,80 @@ function RightExecutionPanel({
           {!hasLiveBalance ? ' preview' : ''}
         </strong>{' '}
         · Est. fee: ~0.003 {nativeSymbol}
+      </div>
+
+      <div className={styles['sodex-card']}>
+        <div className={styles['sodex-header']}>
+          <div>
+            <strong>SoDEX Testnet API</strong>
+            <p>Browser-signed route for live SoDEX testnet execution.</p>
+          </div>
+          <span
+            className={classes(
+              'status-pill',
+              liveSodexReady
+                ? 'status-pill-live'
+                : sodexConfigured
+                  ? 'status-pill-warn'
+                  : 'status-pill-preview'
+            )}
+          >
+            {liveSodexReady ? 'Live Ready' : sodexConfigured ? 'Configured' : 'Preview'}
+          </span>
+        </div>
+        <div className={styles['info-row']}>
+          <span>Route</span>
+          <strong style={{ color: sodexTone }}>
+            {sodexStatus?.executionLabel || 'Preview only'}
+          </strong>
+        </div>
+        <div className={styles['info-row']}>
+          <span>Market</span>
+          <strong>{String(sodexStatus?.marketType || 'spot').toUpperCase()}</strong>
+        </div>
+        <div className={styles['info-row']}>
+          <span>Signing Chain</span>
+          <strong>{sodexStatus?.signingChainId || '--'}</strong>
+        </div>
+        <div className={styles['info-row']}>
+          <span>Account</span>
+          <strong>{sodexStatus?.defaultAccountId || 'Not set'}</strong>
+        </div>
+        <div className={styles['sodex-note']}>
+          {sodexStatus?.readinessMessage ||
+            sodexStatus?.baseUrl ||
+            'Set SODEX_API_URL and SODEX_ACCOUNT_ID in the backend to enable browser-signed SoDEX routing.'}
+        </div>
+      </div>
+
+      <div className={styles['ssi-card']}>
+        <div className={styles['ssi-header']}>
+          <div>
+            <strong>{ssiProgramName} Participation</strong>
+            <p>Holding and activity layer for staking readiness and reward previews.</p>
+          </div>
+          <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Staking Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
+        </div>
+        <div className={styles['ssi-grid']}>
+          <div className={styles['ssi-item']}>
+            <span className={styles['ssi-label']}>Tier</span>
+            <strong className={styles['ssi-value']}>{ssiTierLabel}</strong>
+          </div>
+          <div className={styles['ssi-item']}>
+            <span className={styles['ssi-label']}>Score</span>
+            <strong className={styles['ssi-value']}>{Number.isFinite(ssiScore) ? `${Math.round(ssiScore)}/100` : '--'}</strong>
+          </div>
+          <div className={styles['ssi-item']}>
+            <span className={styles['ssi-label']}>APR Preview</span>
+            <strong className={styles['ssi-value']}>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
+          </div>
+        </div>
+        <div className={styles['ssi-note']}>{ssiPrimaryAction}</div>
+        {wallet.isConnected && Number.isFinite(ssiStakableBalance) ? (
+          <div className={styles['ssi-meta']}>
+            Stakable balance: <strong>{formatTokenAmount(ssiStakableBalance)} {tokenSymbol}</strong>
+          </div>
+        ) : null}
       </div>
 
       <div className={styles['ai-lock']}>
@@ -1050,6 +1342,7 @@ function RightExecutionPanel({
           <strong>{feedback.tone === 'success' ? 'Execution Ready' : 'Execution Blocked'}</strong>
           <p>{feedback.message}</p>
           {feedback.tradeId && <span>Trade ID: {feedback.tradeId}</span>}
+          {feedback.executionMode && <span>Route: {feedback.executionMode}</span>}
           {feedback.oracleStatus && <span>Signal Check: {feedback.oracleStatus}</span>}
           {feedback.validationStatus && <span>Validation: {feedback.validationStatus}</span>}
           {feedback.settlementStatus && <span>Execution: {feedback.settlementStatus}</span>}
@@ -1371,6 +1664,8 @@ export default function AiPowerTradeFinalWorkspace() {
   const performance = terminalData?.performance || {};
   const remoteHistory = Array.isArray(terminalData?.history) && terminalData.history.length ? terminalData.history : DEMO_HISTORY;
   const readiness = terminalData?.readiness || {};
+  const sodexStatus = terminalData?.sodex || null;
+  const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
   const mergedHistory = [...localHistory, ...remoteHistory].slice(0, 8);
   const walletButton = getWalletButtonState(wallet);
   const topMovers = getTopMovers(signals, activeSymbol);
@@ -1574,13 +1869,29 @@ export default function AiPowerTradeFinalWorkspace() {
       return;
     }
 
-    const ready = await wallet.ensureWalletReady();
+    const ready = liveSodexReady
+      ? await wallet.ensureWalletConnected()
+      : await wallet.ensureWalletReady();
 
     if (!ready) {
       setExecutionState('idle');
       setFeedback({
         tone: 'error',
         message: 'Execution approval or network switch was not completed.',
+      });
+      return;
+    }
+
+    const walletSync = await wallet.syncWalletFromProvider({
+      respectDisconnectPreference: false,
+    });
+    const walletAddress = walletSync?.account || wallet.account;
+
+    if (!walletAddress) {
+      setExecutionState('idle');
+      setFeedback({
+        tone: 'error',
+        message: 'Connect a wallet before submitting the trade.',
       });
       return;
     }
@@ -1599,20 +1910,85 @@ export default function AiPowerTradeFinalWorkspace() {
     setExecutionState('submitting');
 
     try {
+      const tradeRequest = {
+        symbol: activeSignal.symbol,
+        trade_type: tradeType,
+        amount: safeAmount,
+        price: entryPrice,
+        wallet_address: walletAddress,
+        confidence: activeSignal.confidence,
+        risk_score: activeSignal.riskScore,
+        force_execute: true,
+      };
+      let preparedLiveExecution = null;
+
+      if (liveSodexReady) {
+        try {
+          const prepareResponse = await fetch('/api/backend/sodex/prepare-order', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(tradeRequest),
+          });
+          const preparePayload = await prepareResponse.json().catch(() => null);
+
+          if (prepareResponse.ok && preparePayload?.success && preparePayload?.data?.typed_data) {
+            preparedLiveExecution = preparePayload.data;
+          } else {
+            throw new Error(
+              preparePayload?.detail ||
+                preparePayload?.message ||
+                'SoDEX testnet order preparation failed'
+            );
+          }
+        } catch (prepareError) {
+          throw new Error(prepareError.message || 'SoDEX testnet order preparation failed');
+        }
+      }
+
+      if (preparedLiveExecution) {
+        const requiredSignerAddress = String(
+          preparedLiveExecution.required_signer_address || preparedLiveExecution.api_key || ''
+        ).trim();
+
+        if (
+          requiredSignerAddress &&
+          walletAddress &&
+          requiredSignerAddress.toLowerCase() !== walletAddress.toLowerCase()
+        ) {
+          throw new Error(
+            'Connected wallet must match the SoDEX API key address configured for this account.'
+          );
+        }
+
+        const rawSignature = await wallet.signTypedData(preparedLiveExecution.typed_data, {
+          networkConfigOverride: sodexStatus?.signingNetwork || null,
+          restoreNetworkConfig: wallet.networkConfig,
+        });
+        const normalizedSignature = normalizeSodexTypedSignature(rawSignature);
+
+        tradeRequest.execution_provider = 'sodex';
+        tradeRequest.sodex_signed_order = {
+          request_body: preparedLiveExecution.request_body,
+          signature: normalizedSignature,
+          nonce: preparedLiveExecution.nonce,
+          endpoint_path: preparedLiveExecution.endpoint_path,
+          api_key: preparedLiveExecution.api_key || null,
+          market_type: preparedLiveExecution.market_type,
+          symbol_name: preparedLiveExecution.symbol_name,
+          payload_hash: preparedLiveExecution.payload_hash,
+          cl_ord_id: preparedLiveExecution.cl_ord_id,
+          estimated_quantity: preparedLiveExecution.estimated_quantity,
+        };
+      }
+
       const response = await fetch('/api/trades/execute-simulated', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          symbol: activeSignal.symbol,
-          trade_type: tradeType,
-          amount: safeAmount,
-          price: entryPrice,
-          wallet_address: wallet.account,
-          confidence: activeSignal.confidence,
-          risk_score: activeSignal.riskScore,
-        }),
+        body: JSON.stringify(tradeRequest),
       });
 
       const payload = await response.json();
@@ -1670,10 +2046,18 @@ export default function AiPowerTradeFinalWorkspace() {
         ...current.filter((item) => item.id !== tradeRecord.tradeId),
       ].slice(0, 6));
       setExecutionState('success');
+      const executionModeLabel =
+        payload?.data?.provider_label ||
+        (payload?.data?.execution_mode === 'sodex_live'
+          ? 'SoDEX Testnet'
+          : payload?.data?.execution_mode === 'preview_local'
+            ? 'Local Preview'
+            : 'Internal Fallback');
       setFeedback({
         tone: 'success',
         message: payload?.message || 'Execution request submitted successfully.',
         tradeId: tradeRecord.tradeId,
+        executionMode: executionModeLabel,
         oracleStatus:
           verification?.transaction_hash
             ? 'Confirmed'
@@ -1686,8 +2070,8 @@ export default function AiPowerTradeFinalWorkspace() {
           payload?.data?.validation?.is_valid === true
             ? 'Passed'
             : payload?.data?.validation
-              ? 'Review'
-              : payload?.data?.validation_status || null,
+            ? 'Review'
+            : payload?.data?.validation_status || null,
         settlementStatus: payload?.data?.settlement?.status || payload?.data?.settlement_status || null,
         recordHash: tradeRecord.recordHash,
       });
@@ -1760,6 +2144,7 @@ export default function AiPowerTradeFinalWorkspace() {
           <RightExecutionPanel
             wallet={wallet}
             previewNetwork={previewNetwork}
+            sodexStatus={sodexStatus}
             tokenSymbol={tokenSymbol}
             availableBalance={availableBalance}
             hasLiveBalance={hasLiveBalance}

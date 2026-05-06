@@ -1,8 +1,9 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;  // 30 seconds
+const EXTENDED_REQUEST_TIMEOUT_MS = 60000; // 60 seconds
 const LOW_PRIORITY_BACKEND_PREFIXES = [
   ['auth'],
   ['user'],
-  ['wallet'],
   ['dashboard'],
   ['backtest'],
   ['ml'],
@@ -20,6 +21,26 @@ function matchLowPriorityBackendPath(pathSegments = []) {
   );
 
   return matchedPrefix ? matchedPrefix.join('/') : null;
+}
+
+function getRequestTimeoutMs(pathSegments = []) {
+  const normalizedPath = pathSegments.map((segment) => String(segment).toLowerCase());
+  const joinedPath = normalizedPath.join('/');
+
+  if (
+    joinedPath.startsWith('sodex/') ||
+    joinedPath.startsWith('ssi/') ||
+    joinedPath.startsWith('ai/') ||
+    joinedPath.startsWith('market/') ||
+    joinedPath === 'sodex' ||
+    joinedPath === 'ssi' ||
+    joinedPath === 'trades/history' ||
+    joinedPath === 'trades/performance'
+  ) {
+    return EXTENDED_REQUEST_TIMEOUT_MS;
+  }
+
+  return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 function appendQueryParams(url, query) {
@@ -82,11 +103,13 @@ export default async function handler(req, res) {
 
   const url = new URL(`${API_URL}/api/${pathSegments.join('/')}`);
   appendQueryParams(url, req.query);
+  const requestTimeoutMs = getRequestTimeoutMs(pathSegments);
 
   try {
     const init = {
       method: req.method,
       headers: buildForwardHeaders(req),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     };
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
@@ -112,6 +135,7 @@ export default async function handler(req, res) {
       error: 'Backend proxy failed',
       message: error.message,
       target: url.toString(),
+      timeout_ms: requestTimeoutMs,
     });
   }
 }

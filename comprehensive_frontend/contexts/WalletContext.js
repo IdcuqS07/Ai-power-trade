@@ -23,6 +23,38 @@ function isSupportedChain(chainId, networkConfig) {
   return Boolean(activeChainId && targetChainId && activeChainId === targetChainId);
 }
 
+function normalizeWalletNetworkConfig(networkConfig) {
+  if (!networkConfig) {
+    return null;
+  }
+
+  const chainId = normalizeChainId(networkConfig.chainId);
+  if (!chainId) {
+    return null;
+  }
+
+  const rpcUrls = Array.isArray(networkConfig.rpcUrls)
+    ? networkConfig.rpcUrls.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  const blockExplorerUrls = Array.isArray(networkConfig.blockExplorerUrls)
+    ? networkConfig.blockExplorerUrls.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  const nativeCurrency = networkConfig.nativeCurrency || {};
+  const symbol = String(nativeCurrency.symbol || nativeCurrency.name || 'ETH');
+
+  return {
+    chainId,
+    chainName: String(networkConfig.chainName || `Chain ${chainId}`),
+    nativeCurrency: {
+      name: String(nativeCurrency.name || symbol),
+      symbol,
+      decimals: Number(nativeCurrency.decimals || 18),
+    },
+    rpcUrls,
+    blockExplorerUrls,
+  };
+}
+
 function createInitialWalletState() {
   return {
     initializing: true,
@@ -34,6 +66,7 @@ function createInitialWalletState() {
     tokenBalance: null,
     canClaim: false,
     cooldownSeconds: 0,
+    ssiProfile: null,
     networkConfig: getDefaultChainConfig(),
     tokenMeta: FALLBACK_TOKEN,
   };
@@ -197,7 +230,62 @@ export function WalletProvider({ children }) {
 
       return data;
     } catch (error) {
-      console.warn('Wallet balance refresh failed:', error);
+      console.warn('Wallet balance refresh failed, trying direct RPC fallback:', error);
+      
+      // Fallback: query balance directly from wallet provider
+      if (typeof window !== 'undefined' && window.ethereum && nextAddress) {
+        try {
+          const balanceHex = await window.ethereum.request({
+            method: 'eth_getBalance',
+            params: [nextAddress, 'latest'],
+          });
+          
+          const balanceWei = BigInt(balanceHex);
+          const balanceEth = Number(balanceWei) / 1e18;
+          
+          safeSetWalletState((current) => ({
+            ...current,
+            tokenBalance: Number(balanceEth.toFixed(4)),
+            canClaim: false,
+            cooldownSeconds: 0,
+          }));
+          
+          console.info('Balance loaded from direct RPC:', balanceEth.toFixed(4));
+          return { balance: balanceEth };
+        } catch (rpcError) {
+          console.warn('Direct RPC balance query also failed:', rpcError);
+        }
+      }
+      
+      return null;
+    }
+  };
+
+  const refreshParticipation = async (addressOverride) => {
+    const nextAddress = addressOverride || walletState.account;
+
+    if (!nextAddress) {
+      safeSetWalletState((current) => ({
+        ...current,
+        ssiProfile: null,
+      }));
+      return null;
+    }
+
+    try {
+      const payload = await fetchWalletJson(
+        `ssi/overview/${encodeURIComponent(nextAddress)}?include_sodex=true&filter_primary_by_user=true`
+      );
+      const data = payload?.data || null;
+
+      safeSetWalletState((current) => ({
+        ...current,
+        ssiProfile: data,
+      }));
+
+      return data;
+    } catch (error) {
+      console.warn('SSI participation refresh failed:', error);
       return null;
     }
   };
@@ -275,12 +363,14 @@ export function WalletProvider({ children }) {
 
     if (visibleAccount) {
       await refreshBalance(visibleAccount);
+      await refreshParticipation(visibleAccount);
     } else {
       safeSetWalletState((current) => ({
         ...current,
         tokenBalance: null,
         canClaim: false,
         cooldownSeconds: 0,
+        ssiProfile: null,
       }));
     }
 
@@ -299,6 +389,46 @@ export function WalletProvider({ children }) {
     window.open('https://metamask.io/download/', '_blank');
   };
 
+  const requestWalletNetworkSwitch = async (provider, networkConfig) => {
+    const targetConfig = normalizeWalletNetworkConfig(networkConfig);
+
+    if (!provider || !targetConfig?.chainId) {
+      return false;
+    }
+
+    try {
+      await provider.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: targetConfig.chainId }],
+      });
+      return true;
+    } catch (error) {
+      if (error?.code === 4902 && targetConfig.rpcUrls.length) {
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: targetConfig.chainId,
+              chainName: targetConfig.chainName,
+              nativeCurrency: targetConfig.nativeCurrency,
+              rpcUrls: targetConfig.rpcUrls,
+              blockExplorerUrls: targetConfig.blockExplorerUrls,
+            },
+          ],
+        });
+        return true;
+      }
+
+      if (error?.code === 4902) {
+        throw new Error(
+          `Add ${targetConfig.chainName} (chain ID ${targetConfig.chainId}) to your wallet manually and try again.`
+        );
+      }
+
+      throw error;
+    }
+  };
+
   const switchToSupportedNetwork = async (networkConfigOverride = null) => {
     const provider = readProvider() || (await waitForInjectedWalletProvider());
 
@@ -314,32 +444,11 @@ export function WalletProvider({ children }) {
     }
 
     try {
-      await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: targetConfig.chainId }],
-      });
+      await requestWalletNetworkSwitch(provider, targetConfig);
 
       const synced = await syncWalletFromProvider({ networkConfigOverride: targetConfig });
       return Boolean(synced.ready || synced.account);
     } catch (error) {
-      if (error?.code === 4902 && targetConfig.rpcUrls?.length) {
-        await provider.request({
-          method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: targetConfig.chainId,
-              chainName: targetConfig.chainName,
-              nativeCurrency: targetConfig.nativeCurrency,
-              rpcUrls: targetConfig.rpcUrls,
-              blockExplorerUrls: targetConfig.blockExplorerUrls,
-            },
-          ],
-        });
-
-        await syncWalletFromProvider({ networkConfigOverride: targetConfig });
-        return true;
-      }
-
       safeSetWalletState((current) => ({
         ...current,
         status: 'error',
@@ -378,7 +487,7 @@ export function WalletProvider({ children }) {
     }
   };
 
-  const connectWallet = async () => {
+  const connectWallet = async ({ enforceTargetNetwork = true } = {}) => {
     const provider = readProvider() || (await waitForInjectedWalletProvider());
 
     if (!provider) {
@@ -417,7 +526,7 @@ export function WalletProvider({ children }) {
         chainId: nextChainId,
       }));
 
-      if (targetChainId && nextChainId !== targetChainId) {
+      if (enforceTargetNetwork && targetChainId && nextChainId !== targetChainId) {
         safeSetWalletState((current) => ({
           ...current,
           status: 'wrong-network',
@@ -428,7 +537,7 @@ export function WalletProvider({ children }) {
       }
 
       await syncWalletFromProvider({
-        networkConfigOverride: targetConfig,
+        networkConfigOverride: enforceTargetNetwork ? targetConfig : null,
         respectDisconnectPreference: false,
       });
       return true;
@@ -444,6 +553,21 @@ export function WalletProvider({ children }) {
 
       return false;
     }
+  };
+
+  const ensureWalletConnected = async () => {
+    const provider = readProvider() || (await waitForInjectedWalletProvider());
+
+    if (!provider) {
+      openInstallWallet();
+      return false;
+    }
+
+    if (walletState.account) {
+      return true;
+    }
+
+    return connectWallet({ enforceTargetNetwork: false });
   };
 
   const disconnectWallet = async () => {
@@ -576,6 +700,82 @@ export function WalletProvider({ children }) {
     return true;
   };
 
+  const signTypedData = async (typedData, options = {}) => {
+    const provider = readProvider() || (await waitForInjectedWalletProvider());
+    const networkConfigOverride = normalizeWalletNetworkConfig(options?.networkConfigOverride);
+    const restoreNetworkConfig = normalizeWalletNetworkConfig(options?.restoreNetworkConfig);
+
+    if (!provider) {
+      openInstallWallet();
+      throw new Error('Install MetaMask to sign the SoDEX order');
+    }
+
+    if (!walletState.account) {
+      throw new Error('Connect your wallet before signing the SoDEX order');
+    }
+
+    safeSetWalletState((current) => ({
+      ...current,
+      status: 'connecting',
+      message: 'Approve the SoDEX order signature in your wallet',
+    }));
+
+    let switchedForSignature = false;
+    let signature = null;
+
+    try {
+      if (networkConfigOverride?.chainId) {
+        const currentChainId = normalizeChainId(
+          walletState.chainId || (await provider.request({ method: 'eth_chainId' }))
+        );
+
+        if (currentChainId !== networkConfigOverride.chainId) {
+          safeSetWalletState((current) => ({
+            ...current,
+            status: 'connecting',
+            message: `Switching wallet to ${networkConfigOverride.chainName} for SoDEX signing`,
+          }));
+
+          await requestWalletNetworkSwitch(provider, networkConfigOverride);
+          switchedForSignature = true;
+        }
+      }
+
+      const payload = typeof typedData === 'string' ? typedData : JSON.stringify(typedData);
+      signature = await provider.request({
+        method: 'eth_signTypedData_v4',
+        params: [walletState.account, payload],
+      });
+    } catch (error) {
+      safeSetWalletState((current) => ({
+        ...current,
+        status: 'error',
+        message:
+          error?.code === 4001
+            ? 'Wallet signature was rejected'
+            : error.message || 'Failed to sign the SoDEX order',
+      }));
+
+      throw error;
+    } finally {
+      if (switchedForSignature && restoreNetworkConfig?.chainId) {
+        try {
+          await requestWalletNetworkSwitch(provider, restoreNetworkConfig);
+        } catch (restoreError) {
+          console.warn('Wallet restore network switch failed:', restoreError);
+        }
+      }
+
+      try {
+        await syncWalletFromProvider({ respectDisconnectPreference: false });
+      } catch (syncError) {
+        console.warn('Wallet post-sign sync failed:', syncError);
+      }
+    }
+
+    return signature;
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     let active = true;
@@ -654,6 +854,20 @@ export function WalletProvider({ children }) {
   }, [walletState.account]);
 
   useEffect(() => {
+    if (!walletState.account) {
+      return undefined;
+    }
+
+    refreshParticipation(walletState.account);
+
+    const interval = setInterval(() => {
+      refreshParticipation(walletState.account);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [walletState.account]);
+
+  useEffect(() => {
     const provider = readProvider();
 
     if (!provider || typeof provider.on !== 'function') {
@@ -715,11 +929,14 @@ export function WalletProvider({ children }) {
     switchWallet,
     disconnectWallet,
     ensureWalletReady,
+    signTypedData,
     refreshBalance,
+    refreshParticipation,
     refreshBlockchainConfig,
     syncWalletFromProvider,
     addTokenToMetaMask,
     openInstallWallet,
+    ensureWalletConnected,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

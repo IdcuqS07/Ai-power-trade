@@ -6,16 +6,18 @@ Integrated with WEEX Exchange Live Data
 from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import asyncio
 import json
 from datetime import datetime
+from pathlib import Path
 import uvicorn
 import random
 import hashlib
 import numpy as np
 import logging
 import time
+import os
 from dotenv import load_dotenv
 
 # Configure logging early so imported modules can use it safely
@@ -25,15 +27,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+BACKEND_DIR = Path(__file__).resolve().parent
+load_dotenv(BACKEND_DIR / ".env")
+load_dotenv(BACKEND_DIR / ".env.local", override=True)
 
 PRICE_SYMBOLS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "MATIC", "LINK"]
+CANDLE_INTERVAL_MS = {
+    "1m": 60_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+}
+DEFAULT_CANDLE_LIMIT = 48
+MAX_CANDLE_LIMIT = 500
+EXPLAINABILITY_CACHE_DURATION_SECONDS = 1800
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 # Import Binance API, Binance Trading and Backtesting
 from binance_api import binance_api
 from binance_trading import binance_trading
 from backtesting import BacktestEngine
 from blockchain_service import blockchain_service
+from provider_registry import get_provider_registry
 from settlement_service import settlement_service
 
 # Import Enhanced AI Predictors
@@ -56,6 +79,51 @@ except Exception as e:
     sosovalue_service = None
     logger.warning(f"SoSoValue service not available: {e}")
 
+try:
+    from cryptopanic_service import cryptopanic_service
+    CRYPTOPANIC_AVAILABLE = True
+    logger.info("✓ CryptoPanic service loaded")
+except Exception as e:
+    CRYPTOPANIC_AVAILABLE = False
+    cryptopanic_service = None
+    logger.warning(f"CryptoPanic service not available: {e}")
+
+try:
+    from openrouter_service import openrouter_service
+    OPENROUTER_AVAILABLE = True
+    logger.info("✓ OpenRouter service loaded")
+except Exception as e:
+    OPENROUTER_AVAILABLE = False
+    openrouter_service = None
+    logger.warning(f"OpenRouter service not available: {e}")
+
+try:
+    from groq_service import groq_service
+    GROQ_AVAILABLE = True
+    logger.info("✓ Groq service loaded (free tier)")
+except Exception as e:
+    GROQ_AVAILABLE = False
+    groq_service = None
+    logger.warning(f"Groq service not available: {e}")
+
+try:
+    from sodex_service import sodex_service
+    SODEX_AVAILABLE = True
+    logger.info("✓ SoDEX service loaded")
+except Exception as e:
+    SODEX_AVAILABLE = False
+    sodex_service = None
+    logger.warning(f"SoDEX service not available: {e}")
+
+try:
+    from ssi_service import ssi_service
+    SSI_AVAILABLE = True
+    logger.info("✓ SSI service loaded")
+except Exception as e:
+    SSI_AVAILABLE = False
+    ssi_service = None
+    logger.warning(f"SSI service not available: {e}")
+
 # Import Database and Auth
 from database import init_db
 from auth_routes import router as auth_router
@@ -76,7 +144,7 @@ app.add_middleware(
 
 # Initialize database on startup
 @app.on_event("startup")
-async def startup_event():
+async def startup_core_services():
     init_db()
     logger.info("✓ Database initialized")
     seed_price_history()
@@ -184,10 +252,95 @@ async def initialize_price_history_async():
     except Exception as e:
         logger.warning(f"Background price history refresh failed: {e}")
 
+
+def clamp_candle_limit(limit: int) -> int:
+    return max(12, min(int(limit or DEFAULT_CANDLE_LIMIT), MAX_CANDLE_LIMIT))
+
+
+def build_explainability_cache_response(
+    cached_payload: Dict[str, Any],
+    *,
+    cache_duration: int,
+    cached_only: bool = False,
+    generation_locked: bool = False,
+    message: Optional[str] = None,
+) -> Dict[str, Any]:
+    response = dict(cached_payload or {})
+    cached_at = float(response.get("cached_at", time.time()) or time.time())
+    cache_age = max(0.0, time.time() - cached_at)
+    next_refresh = max(0, cache_duration - cache_age)
+    signal_available = bool((response.get("data") or {}).get("explain"))
+
+    response["cache_hit"] = True
+    response["cache_age_seconds"] = cache_age
+    response["cache_duration_seconds"] = cache_duration
+    response["next_refresh_in_seconds"] = int(next_refresh)
+    response["generation_allowed"] = next_refresh <= 0
+    response["generation_locked"] = generation_locked
+    response["signal_available"] = signal_available
+
+    if cached_only:
+        response["cached_only"] = True
+
+    if message:
+        response["message"] = message
+
+    return response
+
+
+def build_fallback_candles(symbol: str, interval: str, limit: int) -> List[Dict]:
+    history = trading_state["price_history"].get(symbol) or _generate_simulated_history(symbol)
+    closes = history[-limit:]
+    step_ms = CANDLE_INTERVAL_MS[interval]
+    end_timestamp = int(time.time() * 1000)
+    candles = []
+    previous_close = closes[0] if closes else 0.0
+
+    for index, close_price in enumerate(closes):
+        open_price = previous_close if index else close_price
+        high_price = max(open_price, close_price) * 1.002
+        low_price = min(open_price, close_price) * 0.998
+
+        candles.append({
+            "timestamp": end_timestamp - ((len(closes) - 1 - index) * step_ms),
+            "open": round(open_price, 6),
+            "high": round(high_price, 6),
+            "low": round(low_price, 6),
+            "close": round(close_price, 6),
+            "volume": round(max(1.0, close_price * 0.05), 6),
+        })
+        previous_close = close_price
+
+    return candles
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 # ============ Models ============
 class TradeRequest(BaseModel):
     symbol: str
     force_execute: bool = False
+    trade_type: Optional[str] = None
+    amount: Optional[float] = None
+    price: Optional[float] = None
+    wallet_address: Optional[str] = None
+    confidence: Optional[float] = None
+    risk_score: Optional[float] = None
+    execution_provider: Optional[str] = None
+    sodex_account_id: Optional[str] = None
+    sodex_signed_order: Optional[Dict[str, Any]] = None
+
+class SodexOrderPreparationRequest(BaseModel):
+    symbol: str
+    trade_type: str
+    amount: float
+    price: float
+    wallet_address: Optional[str] = None
+    sodex_account_id: Optional[str] = None
 
 class RiskLimitsUpdate(BaseModel):
     max_position_size_pct: Optional[float] = None
@@ -686,6 +839,83 @@ async def get_api_status():
         }
     }
 
+
+@app.get("/api/health")
+async def get_health():
+    """Lightweight healthcheck for platform load balancers."""
+    return {
+        "success": True,
+        "status": "ok",
+        "service": "comprehensive_backend",
+        "worker_enabled": env_flag("ENABLE_SETTLEMENT_WORKER", False),
+        "database": "configured" if os.getenv("DATABASE_URL") else "sqlite-default",
+    }
+
+@app.get("/api/integrations/providers")
+async def get_integration_providers():
+    """Return the app-level feature-to-provider mapping and readiness summary."""
+    return {
+        "success": True,
+        "data": get_provider_registry(),
+    }
+
+
+@app.get("/api/ssi/status")
+async def get_ssi_status():
+    """Get SSI participation-layer status and configuration."""
+    if not SSI_AVAILABLE or not ssi_service:
+        raise HTTPException(status_code=503, detail="SSI backend service is not available")
+
+    return {
+        "success": True,
+        "data": ssi_service.get_service_status(),
+    }
+
+
+@app.get("/api/ssi/overview/{address}")
+async def get_ssi_overview(
+    address: str,
+    include_sodex: bool = True,
+    account_id: str = None,
+    history_limit: int = 120,
+):
+    """Build an SSI participation overview from holdings and execution history."""
+    if not SSI_AVAILABLE or not ssi_service:
+        raise HTTPException(status_code=503, detail="SSI backend service is not available")
+
+    if not ssi_service.is_available():
+        raise HTTPException(status_code=503, detail="SSI participation layer is disabled")
+
+    normalized_limit = min(max(int(history_limit or 120), 1), 250)
+    token_info = blockchain_service.get_token_info()
+    balance = blockchain_service.get_balance(address)
+    can_claim = blockchain_service.can_claim_faucet(address)
+    cooldown = blockchain_service.time_until_next_claim(address)
+    history_payload = build_trade_history_response(
+        limit=normalized_limit,
+        user_address=address,
+        account_id=account_id,
+        include_sodex=include_sodex,
+        filter_primary_by_user=True,
+        use_cache=True,
+    )
+    performance = _calculate_trade_performance(history_payload.get("data") or [])
+
+    return {
+        "success": True,
+        "data": ssi_service.build_participation_overview(
+            address=address,
+            token_balance=balance,
+            token_symbol=token_info.get("symbol") or "atUSDT",
+            can_claim_faucet=can_claim,
+            cooldown_seconds=cooldown,
+            performance=performance,
+            history_count=history_payload.get("count", 0),
+            history_sources=history_payload.get("sources", {}),
+            history_warnings=history_payload.get("warnings", []),
+        ),
+    }
+
 @app.get("/api/dashboard")
 async def get_dashboard(symbol: str = "BTC"):
     """Get complete dashboard data with live prices and AI signal for specified symbol"""
@@ -796,6 +1026,41 @@ async def get_prices():
         "data": prices, 
         "data_source": "Binance",
         "response_time_ms": round((time.time() - current_time) * 1000, 2)
+    }
+
+@app.get("/api/market/candles/{symbol}")
+async def get_market_candles(symbol: str, interval: str = "1h", limit: int = DEFAULT_CANDLE_LIMIT):
+    """Get candlestick data for charting."""
+    normalized_symbol = symbol.upper()
+
+    if normalized_symbol not in PRICE_SYMBOLS:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+
+    if interval not in CANDLE_INTERVAL_MS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported interval '{interval}'. Supported intervals: {', '.join(CANDLE_INTERVAL_MS.keys())}",
+        )
+
+    normalized_limit = clamp_candle_limit(limit)
+    pair = f"{normalized_symbol}/USDT"
+    candles = binance_api.get_klines(pair, interval=interval, limit=normalized_limit)
+    source = "Binance"
+
+    if not candles:
+        candles = build_fallback_candles(normalized_symbol, interval, normalized_limit)
+        source = "Simulated fallback"
+
+    return {
+        "success": True,
+        "data": {
+            "symbol": normalized_symbol,
+            "pair": pair,
+            "interval": interval,
+            "limit": len(candles),
+            "candles": candles,
+        },
+        "source": source,
     }
 
 def _get_simulated_price(symbol: str) -> Dict:
@@ -987,7 +1252,7 @@ async def explain_ai_decision(symbol: str):
 @app.post("/api/trades/execute")
 async def execute_trade(request: TradeRequest):
     """Execute trade with full validation"""
-    symbol = request.symbol
+    symbol = request.symbol.upper().strip()
     
     if symbol not in trading_state["price_history"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
@@ -1024,6 +1289,103 @@ async def execute_trade(request: TradeRequest):
             "reason": "Validation failed",
             "validation": validation
         }
+
+    requested_provider = str(request.execution_provider or "").lower().strip()
+    wants_sodex = requested_provider == "sodex" or bool(request.sodex_signed_order)
+
+    if wants_sodex:
+        if not request.sodex_signed_order:
+            return {
+                "success": False,
+                "stage": "sodex_execution",
+                "reason": "Signed SoDEX order payload is required for live execution",
+                "execution_provider": "SoDEX",
+                "oracle_verification": oracle_verification,
+                "validation": validation,
+            }
+
+        try:
+            service = require_sodex_service()
+            prepared_order = request.sodex_signed_order
+            sodex_result = service.submit_prepared_order(
+                request_body=prepared_order.get("request_body") or {},
+                signature=str(prepared_order.get("signature") or ""),
+                nonce=int(prepared_order.get("nonce")),
+                endpoint_path=str(prepared_order.get("endpoint_path") or ""),
+                api_key=prepared_order.get("api_key"),
+            )
+            results = sodex_result if isinstance(sodex_result, list) else [sodex_result]
+            primary_result = results[0] if results else {}
+
+            if str(primary_result.get("code", "0")) not in {"0", "200", "None"}:
+                return {
+                    "success": False,
+                    "stage": "sodex_execution",
+                    "reason": primary_result.get("error") or "SoDEX order was rejected",
+                    "execution_provider": "SoDEX",
+                    "sodex": {
+                        "result": sodex_result,
+                        "market_type": prepared_order.get("market_type"),
+                    },
+                    "oracle_verification": oracle_verification,
+                    "validation": validation,
+                }
+
+            trade_side = "SELL" if str(request.trade_type or "").upper() in {"SELL", "SHORT"} else "BUY"
+            execution_price = request.price or current_price
+            execution_amount = safe_float(request.amount)
+            execution_quantity = safe_float(prepared_order.get("estimated_quantity"))
+            order_identifier = primary_result.get("orderID") or prepared_order.get("cl_ord_id") or f"SODEX-{int(time.time() * 1000)}"
+            executed_trade = {
+                "trade_id": str(order_identifier),
+                "symbol": symbol,
+                "type": trade_side,
+                "amount": execution_amount,
+                "price": execution_price,
+                "quantity": execution_quantity,
+                "value": execution_amount,
+                "status": "Submitted",
+                "wallet_address": request.wallet_address,
+                "tx_hash": None,
+                "timestamp": datetime.now().isoformat(),
+                "execution_provider": "SoDEX",
+                "exchange_symbol": prepared_order.get("symbol_name"),
+                "cl_ord_id": primary_result.get("clOrdID") or prepared_order.get("cl_ord_id"),
+                "exchange_order_id": primary_result.get("orderID"),
+            }
+
+            return {
+                "success": True,
+                "execution_provider": "SoDEX",
+                "preview_only": False,
+                "trade": executed_trade,
+                "oracle_verification": oracle_verification,
+                "validation": validation,
+                "on_chain_record": {
+                    "status": "skipped",
+                    "reason": "External SoDEX execution does not use the internal settlement contract",
+                },
+                "settlement": {
+                    "status": "Submitted to SoDEX",
+                    "source": "SoDEX",
+                },
+                "sodex": {
+                    "market_type": prepared_order.get("market_type"),
+                    "symbol_name": prepared_order.get("symbol_name"),
+                    "endpoint_path": prepared_order.get("endpoint_path"),
+                    "result": sodex_result,
+                },
+            }
+        except Exception as e:
+            logger.error(f"SoDEX execution error: {e}")
+            return {
+                "success": False,
+                "stage": "sodex_execution",
+                "reason": str(e),
+                "execution_provider": "SoDEX",
+                "oracle_verification": oracle_verification,
+                "validation": validation,
+            }
     
     # Execute trade
     execution = trading_engine.execute_trade(signal, symbol, current_price)
@@ -1046,131 +1408,559 @@ async def execute_trade(request: TradeRequest):
         "settlement": settlement
     }
 
-@app.get("/api/trades/history")
-async def get_trade_history(limit: int = 20, user_address: str = None):
-    """Get trade history from blockchain with caching"""
-    import time
-    
-    # Check cache first (only if no user filter)
-    if not user_address:
-        current_time = time.time()
-        cache_key = f"trades_{limit}"
-        
-        if trade_history_cache.get("data") and trade_history_cache.get("key") == cache_key:
-            if (current_time - trade_history_cache["timestamp"]) < trade_history_cache["ttl"]:
-                logger.debug("Using cached trade history")
-                return trade_history_cache["data"]
-    
+def _build_trade_history_cache_key(
+    limit: int,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+    account_id: Optional[str] = None,
+    include_sodex: bool = False,
+    filter_primary_by_user: bool = False,
+) -> str:
+    normalized_user = str(user_address or "").strip().lower() or "*"
+    normalized_symbol = str(symbol or "").strip().upper() or "*"
+    normalized_account = str(account_id or "").strip() or "*"
+    return "|".join(
+        [
+            f"limit={limit}",
+            f"user={normalized_user}",
+            f"symbol={normalized_symbol}",
+            f"account={normalized_account}",
+            f"sodex={int(include_sodex)}",
+            f"filter_primary={int(filter_primary_by_user)}",
+        ]
+    )
+
+
+def _trade_timestamp_key(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+
     try:
-        from settlement_service import settlement_service
-        
-        trades = []
-        trade_counter = settlement_service.contract.functions.tradeCounter().call()
-        
-        # Get recent trades
-        start_id = max(1, trade_counter - limit + 1)
-        for trade_id in range(start_id, trade_counter + 1):
-            try:
-                trade_data = settlement_service.contract.functions.getTrade(trade_id).call()
-                
-                # Filter by user if specified
-                if user_address and trade_data[1].lower() != user_address.lower():
-                    continue
-                
-                # Parse trade data
-                from datetime import datetime
-                trade = {
-                    "trade_id": trade_data[0],
-                    "user": trade_data[1],
-                    "symbol": trade_data[2],
-                    "type": trade_data[3],
-                    "amount": float(trade_data[4]) / 1e18,  # Convert from wei
-                    "price": trade_data[5],
-                    "profit_loss": float(trade_data[6]) / 1e18 if trade_data[8] else 0,  # Convert from wei
-                    "timestamp": datetime.fromtimestamp(trade_data[7]).isoformat(),  # Convert Unix timestamp
-                    "settled": trade_data[8],
-                    "quantity": float(trade_data[4]) / 1e18 / trade_data[5],  # amount / price
-                    "value": float(trade_data[4]) / 1e18,
-                    "confidence": 0.85  # Default confidence
-                }
-                trades.append(trade)
-            except Exception as e:
-                logger.debug(f"Error fetching trade {trade_id}: {e}")
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _normalize_trade_record(trade: Dict[str, Any], source_label: str = "Execution") -> Dict[str, Any]:
+    on_chain_record = trade.get("on_chain_record") if isinstance(trade.get("on_chain_record"), dict) else {}
+    amount = safe_float(
+        trade.get("amount"),
+        safe_float(trade.get("value"), safe_float(trade.get("quantity"))),
+    )
+    quantity = safe_float(trade.get("quantity"))
+    price = safe_float(trade.get("price"))
+
+    return {
+        "trade_id": trade.get("trade_id") or trade.get("id"),
+        "user": trade.get("user") or trade.get("wallet_address") or trade.get("trader"),
+        "wallet_address": trade.get("wallet_address"),
+        "symbol": str(trade.get("symbol") or "UNKNOWN").upper(),
+        "type": str(trade.get("type") or trade.get("trade_type") or trade.get("signal") or "BUY").upper(),
+        "amount": amount,
+        "price": price,
+        "profit_loss": safe_float(trade.get("profit_loss"), safe_float(trade.get("pnl"))),
+        "timestamp": trade.get("timestamp") or trade.get("created_at") or datetime.now().isoformat(),
+        "status": trade.get("status") or ("Settled" if trade.get("settled") else "Filled"),
+        "quantity": quantity,
+        "value": safe_float(trade.get("value"), amount or (quantity * price)),
+        "confidence": trade.get("confidence"),
+        "tx_hash": trade.get("tx_hash") or trade.get("transaction_hash"),
+        "record_hash": trade.get("record_hash") or trade.get("block_hash") or on_chain_record.get("block_hash"),
+        "exchange_order_id": trade.get("exchange_order_id"),
+        "cl_ord_id": trade.get("cl_ord_id"),
+        "execution_provider": trade.get("execution_provider"),
+        "source": trade.get("source") or source_label,
+    }
+
+
+def _trade_matches_filters(
+    trade: Dict[str, Any],
+    *,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> bool:
+    normalized_symbol = str(symbol or "").strip().upper()
+    if normalized_symbol and str(trade.get("symbol") or "").upper() != normalized_symbol:
+        return False
+
+    normalized_user = str(user_address or "").strip().lower()
+    if normalized_user:
+        identities = [
+            trade.get("user"),
+            trade.get("wallet_address"),
+            trade.get("trader"),
+        ]
+        if not any(str(identity or "").strip().lower() == normalized_user for identity in identities):
+            return False
+
+    return True
+
+
+def _trade_identity(trade: Dict[str, Any]) -> str:
+    for key in ("tx_hash", "record_hash", "exchange_order_id", "cl_ord_id"):
+        value = str(trade.get(key) or "").strip()
+        if value:
+            return f"{key}:{value.lower()}"
+
+    return ":".join(
+        [
+            str(trade.get("source") or trade.get("execution_provider") or "trade").lower(),
+            str(trade.get("trade_id") or "unknown").lower(),
+            str(trade.get("symbol") or "unknown").lower(),
+            str(trade.get("type") or "unknown").lower(),
+            str(trade.get("timestamp") or "").lower(),
+            f"{safe_float(trade.get('amount'), safe_float(trade.get('value'))):.8f}",
+        ]
+    )
+
+
+def _merge_trade_records(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(existing)
+    for key, value in incoming.items():
+        if value not in (None, "", []):
+            merged[key] = value
+    return merged
+
+
+def _merge_trade_history(*collections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    for collection in collections:
+        for trade in collection:
+            normalized_trade = _normalize_trade_record(trade)
+            identity = _trade_identity(normalized_trade)
+            existing = merged.get(identity)
+            merged[identity] = (
+                _merge_trade_records(existing, normalized_trade) if existing else normalized_trade
+            )
+
+    return sorted(
+        merged.values(),
+        key=lambda trade: _trade_timestamp_key(trade.get("timestamp")),
+        reverse=True,
+    )
+
+
+def _get_memory_trade_history(
+    limit: int,
+    *,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    recent_trades = trading_engine.trades[-limit:] if limit > 0 else trading_engine.trades
+    history = []
+
+    for trade in reversed(recent_trades):
+        normalized_trade = _normalize_trade_record(
+            {
+                **trade,
+                "status": trade.get("status") or "Preview",
+                "source": "Memory",
+            },
+            source_label="Memory",
+        )
+        if _trade_matches_filters(normalized_trade, user_address=user_address, symbol=symbol):
+            history.append(normalized_trade)
+
+    return history
+
+
+def _get_settlement_trade_history(
+    limit: int,
+    *,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    trades = []
+    trade_counter = settlement_service.contract.functions.tradeCounter().call()
+
+    for trade_id in range(trade_counter, 0, -1):
+        try:
+            trade_data = settlement_service.contract.functions.getTrade(trade_id).call()
+            amount = float(trade_data[4]) / 1e18
+            price = safe_float(trade_data[5])
+            trade = {
+                "trade_id": trade_data[0],
+                "user": trade_data[1],
+                "symbol": trade_data[2],
+                "type": trade_data[3],
+                "amount": amount,
+                "price": price,
+                "profit_loss": float(trade_data[6]) / 1e18 if trade_data[8] else 0,
+                "timestamp": datetime.fromtimestamp(trade_data[7]).isoformat(),
+                "settled": trade_data[8],
+                "status": "Settled" if trade_data[8] else "Pending settlement",
+                "quantity": amount / price if price else 0,
+                "value": amount,
+                "confidence": 0.85,
+                "source": "Settlement",
+            }
+
+            if not _trade_matches_filters(trade, user_address=user_address, symbol=symbol):
                 continue
-        
-        # Reverse to show newest first
-        trades.reverse()
-        
-        result = {"success": True, "data": trades, "count": len(trades)}
-        
-        # Cache the result (only if no user filter)
-        if not user_address:
-            trade_history_cache["data"] = result
-            trade_history_cache["key"] = cache_key
-            trade_history_cache["timestamp"] = time.time()
-        
-        return result
+
+            trades.append(_normalize_trade_record(trade, source_label="Settlement"))
+            if limit > 0 and len(trades) >= limit:
+                break
+        except Exception as e:
+            logger.debug(f"Error fetching trade {trade_id}: {e}")
+            continue
+
+    return trades
+
+
+def _collect_primary_trade_history(
+    limit: int,
+    *,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> Dict[str, Any]:
+    if settlement_service.is_ready():
+        try:
+            trades = _get_settlement_trade_history(limit, user_address=user_address, symbol=symbol)
+            return {
+                "trades": trades,
+                "source": "settlement",
+                "status": "active",
+                "blockchain_available": True,
+                "warning": None,
+            }
+        except Exception as e:
+            logger.error(f"Settlement history fetch failed, falling back to memory: {e}")
+            trades = _get_memory_trade_history(limit, user_address=user_address, symbol=symbol)
+            return {
+                "trades": trades,
+                "source": "memory",
+                "status": "fallback",
+                "blockchain_available": False,
+                "warning": f"Settlement history unavailable: {e}",
+            }
+
+    logger.info("Settlement contract unavailable, using in-memory trade history fallback")
+    return {
+        "trades": _get_memory_trade_history(limit, user_address=user_address, symbol=symbol),
+        "source": "memory",
+        "status": "fallback",
+        "blockchain_available": False,
+        "warning": None,
+    }
+
+
+def _collect_sodex_trade_history(
+    limit: int,
+    *,
+    enabled: bool,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+    account_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not enabled:
+        return {
+            "trades": [],
+            "status": "disabled",
+            "count": 0,
+            "source": None,
+            "error": None,
+        }
+
+    if not user_address:
+        return {
+            "trades": [],
+            "status": "skipped_missing_user_address",
+            "count": 0,
+            "source": None,
+            "error": None,
+        }
+
+    if not SODEX_AVAILABLE or not sodex_service or not sodex_service.is_available():
+        return {
+            "trades": [],
+            "status": "unavailable",
+            "count": 0,
+            "source": None,
+            "error": None,
+        }
+
+    try:
+        trades = sodex_service.get_account_trades(
+            user_address=user_address,
+            symbol=symbol,
+            limit=limit,
+            account_id=account_id,
+        )
+        normalized = sodex_service.normalize_history_items(trades)
+        source = "account_trades"
+
+        if not normalized:
+            orders = sodex_service.get_account_order_history(
+                user_address=user_address,
+                symbol=symbol,
+                limit=limit,
+                account_id=account_id,
+            )
+            normalized = sodex_service.normalize_history_items(orders)
+            source = "order_history" if normalized else "empty"
+
+        return {
+            "trades": normalized,
+            "status": "included" if normalized else "empty",
+            "count": len(normalized),
+            "source": source,
+            "error": None,
+        }
+    except Exception as e:
+        logger.error(f"SoDEX history aggregation failed: {e}")
+        return {
+            "trades": [],
+            "status": "error",
+            "count": 0,
+            "source": None,
+            "error": str(e),
+        }
+
+
+def _calculate_trade_performance(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not trades:
+        return {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0,
+            "total_profit": 0,
+            "avg_profit": 0,
+            "best_trade": 0,
+            "worst_trade": 0,
+            "pending_trades": 0,
+            "total_volume": 0,
+        }
+
+    pnl_values = [safe_float(trade.get("profit_loss")) for trade in trades]
+    winning_trades = [value for value in pnl_values if value > 0]
+    total_profit = sum(pnl_values)
+    total_volume = sum(
+        safe_float(trade.get("amount"), safe_float(trade.get("value")))
+        for trade in trades
+    )
+    pending_trades = sum(
+        1
+        for trade in trades
+        if any(
+            keyword in str(trade.get("status") or "").lower()
+            for keyword in ("submit", "process", "pending")
+        )
+    )
+
+    return {
+        "total_trades": len(trades),
+        "winning_trades": len(winning_trades),
+        "losing_trades": len(trades) - len(winning_trades),
+        "win_rate": round(len(winning_trades) / len(trades) * 100, 2),
+        "total_profit": round(total_profit, 2),
+        "avg_profit": round(total_profit / len(trades), 2),
+        "best_trade": round(max(pnl_values), 2),
+        "worst_trade": round(min(pnl_values), 2),
+        "pending_trades": pending_trades,
+        "total_volume": round(total_volume, 2),
+    }
+
+
+def build_trade_history_response(
+    limit: int = 20,
+    *,
+    user_address: Optional[str] = None,
+    symbol: Optional[str] = None,
+    account_id: Optional[str] = None,
+    include_sodex: Optional[bool] = None,
+    filter_primary_by_user: bool = False,
+    use_cache: bool = True,
+) -> Dict[str, Any]:
+    import time
+
+    normalized_limit = min(max(int(limit or 20), 1), 250)
+    normalized_symbol = str(symbol or "").strip().upper() or None
+    include_sodex_history = bool(include_sodex) if include_sodex is not None else bool(user_address)
+    primary_user_filter = user_address if filter_primary_by_user else None
+    cache_key = _build_trade_history_cache_key(
+        normalized_limit,
+        user_address=user_address,
+        symbol=normalized_symbol,
+        account_id=account_id,
+        include_sodex=include_sodex_history,
+        filter_primary_by_user=filter_primary_by_user,
+    )
+
+    if use_cache and trade_history_cache.get("data") and trade_history_cache.get("key") == cache_key:
+        current_time = time.time()
+        if (current_time - trade_history_cache["timestamp"]) < trade_history_cache["ttl"]:
+            logger.debug("Using cached trade history")
+            return trade_history_cache["data"]
+
+    primary_result = _collect_primary_trade_history(
+        normalized_limit,
+        user_address=primary_user_filter,
+        symbol=normalized_symbol,
+    )
+    sodex_result = _collect_sodex_trade_history(
+        normalized_limit,
+        enabled=include_sodex_history,
+        user_address=user_address,
+        symbol=normalized_symbol,
+        account_id=account_id,
+    )
+    merged_history = _merge_trade_history(primary_result["trades"], sodex_result["trades"])[:normalized_limit]
+
+    warnings = []
+    if primary_result.get("warning"):
+        warnings.append(primary_result["warning"])
+    if sodex_result.get("error"):
+        warnings.append(f"SoDEX history unavailable: {sodex_result['error']}")
+
+    response = {
+        "success": True,
+        "data": merged_history,
+        "count": len(merged_history),
+        "source": "aggregated" if sodex_result.get("count") else primary_result["source"],
+        "sources": {
+            "primary": {
+                "name": primary_result["source"],
+                "status": primary_result["status"],
+                "count": len(primary_result["trades"]),
+                "blockchain_available": primary_result["blockchain_available"],
+            },
+            "sodex": {
+                "name": "sodex",
+                "status": sodex_result["status"],
+                "count": sodex_result["count"],
+                "source": sodex_result["source"],
+            },
+        },
+        "blockchain_available": primary_result["blockchain_available"],
+        "sodex_available": bool(SODEX_AVAILABLE and sodex_service and sodex_service.is_available()),
+        "filters": {
+            "user_address": user_address,
+            "symbol": normalized_symbol,
+            "account_id": account_id,
+            "include_sodex": include_sodex_history,
+            "filter_primary_by_user": filter_primary_by_user,
+            "limit": normalized_limit,
+        },
+    }
+
+    if warnings:
+        response["warnings"] = warnings
+
+    if use_cache:
+        trade_history_cache["data"] = response
+        trade_history_cache["key"] = cache_key
+        trade_history_cache["timestamp"] = time.time()
+
+    return response
+
+
+@app.get("/api/trades/history")
+async def get_trade_history(
+    limit: int = 20,
+    user_address: str = None,
+    symbol: str = None,
+    account_id: str = None,
+    include_sodex: Optional[bool] = None,
+    filter_primary_by_user: bool = False,
+):
+    """Get a unified execution history across internal, settlement, and optional SoDEX sources."""
+    try:
+        return build_trade_history_response(
+            limit=limit,
+            user_address=user_address,
+            symbol=symbol,
+            account_id=account_id,
+            include_sodex=include_sodex,
+            filter_primary_by_user=filter_primary_by_user,
+            use_cache=True,
+        )
     except Exception as e:
         logger.error(f"Error fetching trade history: {e}")
-        # Fallback to in-memory trades
-        trades = trading_engine.trades[-limit:][::-1]
-        return {"success": True, "data": trades, "count": len(trades)}
+        trades = _get_memory_trade_history(
+            min(max(int(limit or 20), 1), 250),
+            user_address=user_address if filter_primary_by_user else None,
+            symbol=symbol,
+        )
+        return {
+            "success": True,
+            "data": trades,
+            "count": len(trades),
+            "source": "memory",
+            "blockchain_available": False,
+            "warnings": [f"Unified history fallback active: {e}"],
+        }
+
 
 @app.get("/api/trades/performance")
-async def get_performance():
-    """Get trading performance from blockchain"""
+async def get_performance(
+    user_address: str = None,
+    symbol: str = None,
+    account_id: str = None,
+    include_sodex: Optional[bool] = None,
+    filter_primary_by_user: bool = False,
+    limit: int = 250,
+):
+    """Get trading performance, optionally based on the unified trade history feed."""
+    wants_unified_history = bool(
+        user_address or symbol or account_id or filter_primary_by_user or include_sodex is not None
+    )
+
+    if wants_unified_history:
+        history_payload = build_trade_history_response(
+            limit=limit,
+            user_address=user_address,
+            symbol=symbol,
+            account_id=account_id,
+            include_sodex=include_sodex,
+            filter_primary_by_user=filter_primary_by_user,
+            use_cache=True,
+        )
+        performance = _calculate_trade_performance(history_payload.get("data") or [])
+        return {
+            "success": True,
+            "data": performance,
+            "source": history_payload.get("source"),
+            "sources": history_payload.get("sources", {}),
+            "count": history_payload.get("count", 0),
+            "filters": history_payload.get("filters", {}),
+            "warnings": history_payload.get("warnings", []),
+        }
+
     try:
-        from settlement_service import settlement_service
-        
+        if not settlement_service.is_ready():
+            logger.info("Settlement contract unavailable, using in-memory performance fallback")
+            performance = trading_engine.get_performance()
+            return {
+                "success": True,
+                "data": performance,
+                "source": "memory",
+                "blockchain_available": False,
+            }
+
         trades = []
         trade_counter = settlement_service.contract.functions.tradeCounter().call()
-        
-        # Get all settled trades
+
         for trade_id in range(1, trade_counter + 1):
             try:
                 trade_data = settlement_service.contract.functions.getTrade(trade_id).call()
-                
-                # Only count settled trades
-                if trade_data[8]:  # settled = True
-                    profit_loss = float(trade_data[6]) / 1e18  # Convert from wei
-                    trades.append({
-                        "profit_loss": profit_loss
-                    })
+
+                if trade_data[8]:
+                    trades.append({"profit_loss": float(trade_data[6]) / 1e18})
             except Exception as e:
                 logger.debug(f"Error fetching trade {trade_id}: {e}")
                 continue
-        
-        # Calculate performance
-        if not trades:
-            performance = {
-                "total_trades": 0,
-                "winning_trades": 0,
-                "losing_trades": 0,
-                "win_rate": 0,
-                "total_profit": 0,
-                "avg_profit": 0,
-                "best_trade": 0,
-                "worst_trade": 0
-            }
-        else:
-            winning = [t for t in trades if t["profit_loss"] > 0]
-            total_profit = sum(t["profit_loss"] for t in trades)
-            
-            performance = {
-                "total_trades": len(trades),
-                "winning_trades": len(winning),
-                "losing_trades": len(trades) - len(winning),
-                "win_rate": round(len(winning) / len(trades) * 100, 2),
-                "total_profit": round(total_profit, 2),
-                "avg_profit": round(total_profit / len(trades), 2),
-                "best_trade": round(max(t["profit_loss"] for t in trades), 2),
-                "worst_trade": round(min(t["profit_loss"] for t in trades), 2)
-            }
-        
+
+        performance = _calculate_trade_performance(trades)
         return {"success": True, "data": performance}
     except Exception as e:
         logger.error(f"Error calculating performance: {e}")
-        # Fallback to in-memory trades
         performance = trading_engine.get_performance()
         return {"success": True, "data": performance}
 
@@ -1638,8 +2428,29 @@ async def get_hackathon_info():
     }
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_background_services():
     """Start background services"""
+    
+    # Signal scheduler disabled - using on-demand with cache instead
+    if env_flag("ENABLE_SIGNAL_SCHEDULER", False):
+        try:
+            from signal_scheduler import start_scheduler
+            start_scheduler()
+            logger.info("🔄 Signal scheduler enabled")
+        except Exception as e:
+            logger.warning(f"Signal scheduler failed to start: {e}")
+    else:
+        logger.info("💤 Signal scheduler disabled (using on-demand with 30min manual signal cache)")
+    
+    # Start settlement worker
+    if not env_flag("ENABLE_SETTLEMENT_WORKER", False):
+        logger.info("💤 Settlement worker disabled for this process")
+        return
+
+    if not settlement_service.is_ready():
+        logger.info("💤 Settlement contract unavailable - background worker not started")
+        return
+
     if settlement_service.account:
         asyncio.create_task(settlement_service.monitor_and_settle())
         logger.info("🤖 Auto-settlement service started")
@@ -2190,16 +3001,30 @@ async def get_coingecko_data(symbol: str):
 
 @app.get("/api/ai/market-sentiment/{symbol}")
 async def get_market_sentiment(symbol: str):
-    """Get market sentiment from CoinGecko"""
+    """Get market sentiment with CryptoPanic preferred and CoinGecko fallback."""
+    normalized_symbol = symbol.upper()
+
+    if CRYPTOPANIC_AVAILABLE and cryptopanic_service and cryptopanic_service.is_available():
+        try:
+            sentiment = cryptopanic_service.get_symbol_sentiment(normalized_symbol, limit=10)
+            return {
+                "success": True,
+                "data": sentiment
+            }
+        except Exception as e:
+            logger.warning(f"CryptoPanic sentiment fallback for {normalized_symbol}: {e}")
+
     if not ENHANCED_AI_AVAILABLE:
-        raise HTTPException(status_code=503, detail="CoinGecko integration not available")
+        raise HTTPException(status_code=503, detail="Sentiment integrations are not available")
     
     try:
-        sentiment = coingecko_api.get_market_sentiment(symbol)
+        sentiment = coingecko_api.get_market_sentiment(normalized_symbol)
         
         if not sentiment:
-            raise HTTPException(status_code=404, detail=f"No sentiment data for {symbol}")
+            raise HTTPException(status_code=404, detail=f"No sentiment data for {normalized_symbol}")
         
+        sentiment["source"] = sentiment.get("source") or "CoinGecko"
+
         return {
             "success": True,
             "data": sentiment
@@ -2269,6 +3094,49 @@ def require_sosovalue_service(check_enabled: bool = True):
         raise HTTPException(status_code=503, detail=sosovalue_service.get_unavailable_reason())
 
     return sosovalue_service
+
+
+def require_cryptopanic_service():
+    """Ensure the CryptoPanic service is configured."""
+    if not CRYPTOPANIC_AVAILABLE or not cryptopanic_service:
+        raise HTTPException(status_code=503, detail="CryptoPanic backend service is not available")
+
+    if not cryptopanic_service.is_available():
+        raise HTTPException(status_code=503, detail="CRYPTOPANIC_API_KEY is not configured")
+
+    return cryptopanic_service
+
+
+def require_sodex_service():
+    """Ensure the SoDEX read-path service is configured."""
+    if not SODEX_AVAILABLE or not sodex_service:
+        raise HTTPException(status_code=503, detail="SoDEX backend service is not available")
+
+    if not sodex_service.is_available():
+        raise HTTPException(status_code=503, detail="SODEX_API_URL is not configured")
+
+    return sodex_service
+
+
+def _merge_news_feeds(
+    primary_feed: Optional[Dict],
+    secondary_feed: Optional[Dict] = None,
+    limit: int = 5,
+) -> Dict:
+    merged = []
+
+    for feed in [primary_feed, secondary_feed]:
+        for item in (feed or {}).get("articles", []):
+            title = item.get("title")
+            if title and not any(existing.get("title") == title for existing in merged):
+                merged.append(item)
+
+    return {
+        "symbol": (primary_feed or secondary_feed or {}).get("symbol"),
+        "articles": merged[:limit],
+        "count": len(merged[:limit]),
+        "source": "CryptoPanic + SoSoValue" if primary_feed and secondary_feed else (primary_feed or secondary_feed or {}).get("source"),
+    }
 
 
 @app.get("/api/sosovalue/status")
@@ -2364,6 +3232,416 @@ async def get_sosovalue_research_context(symbol: str, news_limit: int = 5):
     except Exception as e:
         logger.error(f"SoSoValue research context error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cryptopanic/status")
+async def get_cryptopanic_status():
+    """Get CryptoPanic backend integration status."""
+    if not CRYPTOPANIC_AVAILABLE or not cryptopanic_service:
+        raise HTTPException(status_code=503, detail="CryptoPanic backend service is not available")
+
+    return {
+        "success": True,
+        "data": cryptopanic_service.get_service_status()
+    }
+
+
+@app.get("/api/cryptopanic/news/{symbol}")
+async def get_cryptopanic_news(symbol: str, limit: int = 5):
+    """Get CryptoPanic news for one asset symbol."""
+    service = require_cryptopanic_service()
+
+    try:
+        feed = service.get_news_feed(symbol=symbol, limit=limit)
+        return {
+            "success": True,
+            "data": feed
+        }
+    except Exception as e:
+        logger.error(f"CryptoPanic news error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cryptopanic/sentiment/{symbol}")
+async def get_cryptopanic_sentiment(symbol: str, limit: int = 10):
+    """Get CryptoPanic-derived sentiment for one asset symbol."""
+    service = require_cryptopanic_service()
+
+    try:
+        sentiment = service.get_symbol_sentiment(symbol=symbol, limit=limit)
+        return {
+            "success": True,
+            "data": sentiment
+        }
+    except Exception as e:
+        logger.error(f"CryptoPanic sentiment error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sodex/prepare-order")
+async def prepare_sodex_order(request: SodexOrderPreparationRequest):
+    """Build a SoDEX EIP-712 payload for browser signing."""
+    service = require_sodex_service()
+
+    try:
+        prepared_order = service.prepare_order(
+            symbol=request.symbol,
+            trade_type=request.trade_type,
+            amount=request.amount,
+            price=request.price,
+            wallet_address=request.wallet_address,
+            account_id=request.sodex_account_id,
+        )
+        return {
+            "success": True,
+            "data": prepared_order,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"SoDEX prepare order error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sodex/status")
+async def get_sodex_status():
+    """Get SoDEX read-path integration status."""
+    if not SODEX_AVAILABLE or not sodex_service:
+        raise HTTPException(status_code=503, detail="SoDEX backend service is not available")
+
+    return {
+        "success": True,
+        "data": sodex_service.get_service_status()
+    }
+
+
+@app.get("/api/sodex/markets/symbols")
+async def get_sodex_symbols(symbol: str = None):
+    """Get SoDEX market symbols for the configured gateway."""
+    service = require_sodex_service()
+
+    try:
+        symbols = service.get_symbols(symbol=symbol)
+        return {
+            "success": True,
+            "data": symbols,
+            "count": len(symbols)
+        }
+    except Exception as e:
+        logger.error(f"SoDEX symbols error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sodex/markets/tickers")
+async def get_sodex_tickers(symbol: str = None):
+    """Get SoDEX market tickers for the configured gateway."""
+    service = require_sodex_service()
+
+    try:
+        tickers = service.get_tickers(symbol=symbol)
+        return {
+            "success": True,
+            "data": tickers,
+            "count": len(tickers)
+        }
+    except Exception as e:
+        logger.error(f"SoDEX tickers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sodex/history/{user_address}")
+async def get_sodex_history(user_address: str, symbol: str = None, limit: int = 50, account_id: str = None):
+    """Get SoDEX trade or order history for one account."""
+    service = require_sodex_service()
+
+    try:
+        trades = service.get_account_trades(
+            user_address=user_address,
+            symbol=symbol,
+            limit=min(max(int(limit or 50), 1), 250),
+            account_id=account_id,
+        )
+        normalized = service.normalize_history_items(trades)
+
+        if not normalized:
+            orders = service.get_account_order_history(
+                user_address=user_address,
+                symbol=symbol,
+                limit=min(max(int(limit or 50), 1), 250),
+                account_id=account_id,
+            )
+            normalized = service.normalize_history_items(orders)
+
+        return {
+            "success": True,
+            "data": normalized,
+            "count": len(normalized),
+            "source": "SoDEX"
+        }
+    except Exception as e:
+        logger.error(f"SoDEX history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/explainability/{symbol}")
+async def get_ai_explainability_bundle(
+    symbol: str,
+    news_limit: int = 3,
+    candle_limit: int = 24,
+    candle_interval: str = "1h",
+    force_refresh: bool = False,
+    cached_only: bool = False,
+):
+    """
+    Aggregate AI explainability with smart caching.
+    Signals are generated at most once every 30 minutes per symbol.
+    Use cached_only=true to read the latest snapshot without generating a new one.
+    Use force_refresh=true to request a new snapshot once the cooldown has expired.
+    """
+    normalized_symbol = symbol.upper().strip()
+
+    if normalized_symbol not in trading_state["price_history"]:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+
+    cache_duration = EXPLAINABILITY_CACHE_DURATION_SECONDS
+    cache_key = f"explainability:{normalized_symbol}:{news_limit}:{candle_limit}:{candle_interval}"
+
+    try:
+        from utils.cache import get_cached, set_cached
+    except Exception:
+        get_cached = None
+        set_cached = None
+
+    cached = get_cached(cache_key) if get_cached else None
+    if cached:
+        cached_response = build_explainability_cache_response(
+            cached,
+            cache_duration=cache_duration,
+            cached_only=cached_only,
+            generation_locked=bool(force_refresh),
+            message=(
+                f"Fresh AI signals are limited to one generation every 30 minutes. "
+                f"The latest cached {normalized_symbol} signal is still active."
+                if force_refresh
+                else None
+            ),
+        )
+
+        if cached_only:
+            return cached_response
+
+        if force_refresh and cached_response.get("next_refresh_in_seconds", 0) > 0:
+            return cached_response
+
+        if not force_refresh:
+            return cached_response
+
+    if cached_only:
+        return {
+            "success": True,
+            "data": None,
+            "cache_hit": False,
+            "cached_only": True,
+            "signal_available": False,
+            "generation_allowed": True,
+            "generation_locked": False,
+            "cache_duration_seconds": cache_duration,
+            "next_refresh_in_seconds": 0,
+            "message": (
+                f"No cached explainability signal is ready for {normalized_symbol}. "
+                f"Use Generate Signal to create a fresh snapshot."
+            ),
+        }
+
+    explain_payload = await explain_ai_decision(normalized_symbol)
+    candles_payload = await get_market_candles(
+        normalized_symbol,
+        interval=candle_interval,
+        limit=candle_limit,
+    )
+    market_prices_payload = await get_prices()
+    market_snapshot = (market_prices_payload.get("data") or {}).get(normalized_symbol, {})
+
+    explain_data = dict(explain_payload.get("data") or {})
+    provider_registry = get_provider_registry()
+    warnings = []
+
+    research_context = None
+    etf_metrics = None
+    sosovalue_feed = None
+    if SOSOVALUE_AVAILABLE and sosovalue_service and sosovalue_service.is_available():
+        try:
+            research_context = sosovalue_service.get_research_context(normalized_symbol, news_limit=news_limit)
+        except Exception as e:
+            warnings.append(f"SoSoValue research unavailable: {e}")
+
+        try:
+            sosovalue_feed = sosovalue_service.get_news_feed(symbol=normalized_symbol, page_num=1, page_size=news_limit)
+        except Exception as e:
+            warnings.append(f"SoSoValue news unavailable: {e}")
+
+        try:
+            etf_metrics = sosovalue_service.get_etf_metrics(
+                etf_type="us-eth-spot" if normalized_symbol == "ETH" else "us-btc-spot"
+            )
+        except Exception as e:
+            warnings.append(f"SoSoValue ETF metrics unavailable: {e}")
+
+    cryptopanic_feed = None
+    cryptopanic_sentiment = None
+    if CRYPTOPANIC_AVAILABLE and cryptopanic_service and cryptopanic_service.is_available():
+        try:
+            cryptopanic_feed = cryptopanic_service.get_news_feed(symbol=normalized_symbol, limit=news_limit)
+        except Exception:
+            pass  # CryptoPanic is optional
+
+        try:
+            cryptopanic_sentiment = cryptopanic_service.get_symbol_sentiment(normalized_symbol, limit=max(news_limit * 2, 6))
+        except Exception:
+            pass  # CryptoPanic is optional
+
+    merged_news = _merge_news_feeds(cryptopanic_feed, sosovalue_feed, limit=news_limit)
+    sentiment_data = cryptopanic_sentiment
+
+    # Skip fallback sentiment if CryptoPanic not available (optional feature)
+    if not sentiment_data:
+        try:
+            sentiment_payload = await get_market_sentiment(normalized_symbol)
+            sentiment_data = sentiment_payload.get("data")
+        except Exception:
+            pass  # Sentiment is optional, no warning needed
+
+    llm_overlay = None
+    
+    # Try Groq first (free tier)
+    if GROQ_AVAILABLE and groq_service and groq_service.is_available():
+        try:
+            llm_overlay = groq_service.build_signal_overlay(
+                normalized_symbol,
+                explain_data=explain_data,
+                market_snapshot=market_snapshot,
+                research_context=research_context,
+                sentiment=sentiment_data,
+                news_items=merged_news.get("articles", []),
+            )
+            explain_data["llm_overlay"] = llm_overlay
+        except Exception as e:
+            warnings.append(f"Groq overlay unavailable: {e}")
+    
+    # Fallback to OpenRouter if Groq failed
+    if not llm_overlay and OPENROUTER_AVAILABLE and openrouter_service and openrouter_service.is_available():
+        try:
+            llm_overlay = openrouter_service.build_signal_overlay(
+                normalized_symbol,
+                explain_data=explain_data,
+                market_snapshot=market_snapshot,
+                research_context=research_context,
+                sentiment=sentiment_data,
+                news_items=merged_news.get("articles", []),
+            )
+            explain_data["llm_overlay"] = llm_overlay
+        except Exception as e:
+            warnings.append(f"OpenRouter overlay unavailable: {e}")
+
+    result = {
+        "success": True,
+        "data": {
+            "symbol": normalized_symbol,
+            "explain": explain_data,
+            "research": research_context,
+            "sentiment": sentiment_data,
+            "news": merged_news,
+            "etf": etf_metrics,
+            "llm": llm_overlay,
+            "candles": candles_payload.get("data"),
+            "providers": provider_registry.get("providers", {}),
+            "sources": {
+                "explain": explain_payload.get("source", "fresh"),
+                "market": market_prices_payload.get("source", "fresh"),
+                "news": merged_news.get("source") or "Unavailable",
+                "sentiment": (sentiment_data or {}).get("source") or "Unavailable",
+                "llm": (llm_overlay or {}).get("provider") or "Unavailable",
+            },
+            "warnings": warnings,
+            "updated_at": datetime.now().isoformat(),
+        },
+        "cache_hit": False,
+        "cached_at": time.time(),
+        "cache_duration_seconds": cache_duration,
+        "next_refresh_in_seconds": cache_duration,
+        "generation_allowed": False,
+        "generation_locked": False,
+        "signal_available": True,
+        "message": "Fresh signal generated. The next manual generation window opens in 30 minutes.",
+    }
+    
+    # Save to cache
+    try:
+        if set_cached:
+            set_cached(cache_key, result, cache_duration)
+    except Exception:
+        pass  # Cache save failed, but return result anyway
+    
+    return result
+
+
+@app.get("/api/ai/signal/cached/{symbol}")
+async def get_cached_signal(symbol: str):
+    """
+    Get pre-generated cached signal from scheduler
+    Much faster than on-demand generation
+    """
+    try:
+        from signal_scheduler import get_cached_signal, signal_cache
+        
+        normalized_symbol = symbol.upper().strip()
+        cached = get_cached_signal(normalized_symbol)
+        
+        if not cached:
+            return {
+                "success": False,
+                "error": "Signal not cached yet",
+                "message": f"Signal for {normalized_symbol} is being generated. Try again in a few seconds.",
+                "available_symbols": list(signal_cache.cache.keys()),
+            }
+        
+        age = signal_cache.get_age(normalized_symbol)
+        
+        return {
+            "success": True,
+            "data": cached,
+            "cache_age_seconds": age,
+            "source": "scheduled_cache",
+        }
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Signal scheduler not available")
+
+
+@app.get("/api/ai/signal/status")
+async def get_signal_scheduler_status():
+    """Get status of signal scheduler and all cached signals"""
+    try:
+        from signal_scheduler import get_signal_status
+        
+        status = get_signal_status()
+        
+        return {
+            "success": True,
+            "data": {
+                "scheduler_enabled": True,
+                "signals": status,
+                "timestamp": datetime.now().isoformat(),
+            }
+        }
+    except ImportError:
+        return {
+            "success": False,
+            "error": "Signal scheduler not available",
+            "data": {
+                "scheduler_enabled": False,
+                "signals": {},
+            }
+        }
 
 
 @app.post("/api/ai/lstm/train")

@@ -5,10 +5,13 @@ import {
 import {
   FALLBACK_TOKEN,
   getDefaultChainConfig,
+  normalizeChainId,
   resolveBlockchainConfig,
 } from '../../../lib/walletNetwork';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
+const REQUEST_TIMEOUT_MS = 3000;
+const SODEX_TESTNET_CHAIN_ID = 138565;
 const TERMINAL_SYMBOLS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'MATIC', 'LINK'];
 const DEMO_UPDATED_AT = '2026-04-26T12:00:00.000Z';
 const SYMBOL_NAMES = {
@@ -222,12 +225,34 @@ function buildDerivedSignal(symbol, liveData = {}) {
   };
 }
 
+function buildChartSeriesFromCandles(candlePayload = {}) {
+  const candles = Array.isArray(candlePayload?.candles) ? candlePayload.candles : [];
+
+  return candles.map((candle) => {
+    const timestamp = Number(candle?.timestamp || 0);
+    const timeLabel = timestamp
+      ? new Date(timestamp).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })
+      : '--:--';
+
+    return {
+      time: timeLabel,
+      price: Number(candle?.close || candle?.price || 0),
+      volume: Number(candle?.volume || 0),
+      confidence: 0,
+    };
+  });
+}
+
 async function fetchBackendJson(path) {
   const response = await fetch(`${API_URL}/api/${path}`, {
     headers: {
       'Content-Type': 'application/json',
     },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -251,6 +276,97 @@ function normalizeHistoryItem(item, index = 0) {
     timestamp,
     txHash: item?.tx_hash || item?.transaction_hash || null,
     recordHash: item?.record_hash || item?.block_hash || item?.on_chain_record?.block_hash || null,
+  };
+}
+
+function resolveSodexStatus(payload = null) {
+  const data = payload?.success ? payload?.data || {} : payload?.data || {};
+  const baseUrl = String(data?.base_url || '').trim() || null;
+  const configured = Boolean(data?.configured);
+  const writePath = String(data?.write_path || (configured ? 'configured' : 'not_configured'));
+  const marketType = String(data?.market_type || 'spot').toLowerCase();
+  const signingDomain = data?.signing_domain || {};
+  const signingChainId = Number(signingDomain?.chainId || 0) || null;
+  const isTestnet =
+    signingChainId === SODEX_TESTNET_CHAIN_ID || /testnet/i.test(baseUrl || '');
+  const browserSigningReady = Boolean(
+    data?.browser_signing_ready ?? (configured && writePath === 'browser_signed_ready')
+  );
+  const canPrepareOrder = Boolean(data?.can_prepare_order ?? browserSigningReady);
+  const missingRequirements = Array.isArray(data?.missing_requirements)
+    ? data.missing_requirements
+    : [];
+  const apiKeyMode = String(data?.api_key_mode || '').trim() || 'browser_wallet';
+  const mode = browserSigningReady ? 'live' : configured ? 'configured' : 'preview';
+  const providerLabel = browserSigningReady
+    ? `SoDEX ${isTestnet ? 'Testnet' : 'Live'}`
+    : configured
+      ? 'SoDEX Configured'
+      : 'Preview Fallback';
+  const executionLabel = browserSigningReady
+    ? `${marketType.toUpperCase()} ${isTestnet ? 'testnet' : 'live'}`
+    : configured && missingRequirements.includes('SODEX_ACCOUNT_ID')
+      ? 'Account setup required'
+      : configured
+        ? 'Standby'
+      : 'Preview only';
+  const readinessTone = browserSigningReady
+    ? 'var(--green)'
+    : configured
+      ? 'var(--yellow)'
+      : 'var(--text-tertiary)';
+  const readinessMessage =
+    String(data?.readiness_message || '').trim() ||
+    (baseUrl
+      ? baseUrl
+      : 'Set SODEX_API_URL and SODEX_ACCOUNT_ID in the backend to enable browser-signed SoDEX routing.');
+  const signingNetworkData = data?.signing_network || null;
+  const signingNetwork = signingNetworkData
+    ? {
+        chainId: normalizeChainId(signingNetworkData?.chainId || signingChainId),
+        chainName:
+          String(signingNetworkData?.chainName || '').trim() ||
+          (isTestnet ? 'ValueChain Testnet' : 'ValueChain'),
+        nativeCurrency: {
+          name:
+            String(signingNetworkData?.nativeCurrency?.name || signingNetworkData?.nativeCurrency?.symbol || 'SOSO'),
+          symbol:
+            String(signingNetworkData?.nativeCurrency?.symbol || signingNetworkData?.nativeCurrency?.name || 'SOSO'),
+          decimals: Number(signingNetworkData?.nativeCurrency?.decimals || 18),
+        },
+        rpcUrls: Array.isArray(signingNetworkData?.rpcUrls)
+          ? signingNetworkData.rpcUrls.filter((value) => typeof value === 'string' && value.trim())
+          : [],
+        blockExplorerUrls: Array.isArray(signingNetworkData?.blockExplorerUrls)
+          ? signingNetworkData.blockExplorerUrls.filter((value) => typeof value === 'string' && value.trim())
+          : [],
+        source: signingNetworkData?.source || null,
+      }
+    : null;
+
+  return {
+    provider: data?.provider || 'SoDEX',
+    configured,
+    mode,
+    providerLabel,
+    executionLabel,
+    readinessTone,
+    baseUrl,
+    marketType,
+    defaultAccountId: data?.default_account_id || null,
+    apiKeyConfigured: Boolean(data?.api_key_configured),
+    apiKeyMode,
+    browserWalletApiKeySupported: Boolean(data?.browser_wallet_api_key_supported ?? true),
+    serverWalletSigningAvailable: Boolean(data?.server_wallet_signing_available),
+    writePath,
+    signingChainId,
+    signingDomain,
+    isTestnet,
+    browserSigningReady,
+    canPrepareOrder,
+    missingRequirements,
+    readinessMessage,
+    signingNetwork,
   };
 }
 
@@ -441,7 +557,7 @@ function buildHorizon(enhanced, fallbackValue) {
   return fallbackValue || '1-2d';
 }
 
-function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, marketSentiment, globalMarket) {
+function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, marketSentiment, globalMarket, candleSeries = []) {
   const marketData = enhanced?.market_data || {};
   const technical = enhanced?.technical_indicators || prediction?.indicators || {};
   const actionSignal = enhanced?.signal || prediction?.signal || baseSignal.signal;
@@ -516,7 +632,7 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
     confidenceDrivers,
     catalysts,
     orderFlow: buildOrderFlow(baseSignal, enhanced, globalMarket),
-    chart: baseSignal.chart || [],
+    chart: candleSeries.length ? candleSeries : baseSignal.chart || [],
     liveData: liveData || null,
     modelBreakdown,
     positionSize: Number(prediction?.position_size ?? 0) || null,
@@ -529,23 +645,39 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
   };
 }
 
-function buildReadiness(blockchainPayload, activeSignal, enhanced) {
+function buildReadiness(blockchainPayload, activeSignal, enhanced, sodexStatus = null) {
   const blockchainStatus = blockchainPayload?.status || {};
   const connected = Boolean(blockchainStatus.connected);
   const contractReady = Boolean(blockchainStatus.contract_deployed);
   const networkName = blockchainPayload?.network?.chainName || 'Execution network';
   const nativeSymbol = blockchainPayload?.network?.nativeCurrency?.symbol || 'tBNB';
+  const liveSodexReady = Boolean(sodexStatus?.browserSigningReady);
+  const sodexTone = sodexStatus?.readinessTone || 'var(--text-tertiary)';
+  const statusLabel = liveSodexReady
+    ? 'SODEX LIVE'
+    : connected && contractReady
+      ? 'READY'
+      : connected
+        ? 'LIMITED'
+        : 'PREVIEW';
+  const statusTone = liveSodexReady
+    ? 'var(--green)'
+    : connected && contractReady
+      ? 'var(--green)'
+      : connected
+        ? 'var(--yellow)'
+        : 'var(--text-tertiary)';
 
   return {
-    statusLabel: connected && contractReady ? 'READY' : connected ? 'LIMITED' : 'PREVIEW',
-    statusTone: connected && contractReady ? 'var(--green)' : connected ? 'var(--yellow)' : 'var(--text-tertiary)',
+    statusLabel,
+    statusTone,
     oracle: {
       label: enhanced?.signal_alignment === 'STRONG' ? 'Aligned' : connected ? 'Monitoring' : 'Preview',
       tone: enhanced?.signal_alignment === 'STRONG' ? 'var(--green)' : connected ? 'var(--purple)' : 'var(--text-tertiary)',
     },
     contract: {
-      label: contractReady ? 'Ready' : 'Preview',
-      tone: contractReady ? 'var(--purple)' : 'var(--yellow)',
+      label: liveSodexReady ? sodexStatus.providerLabel : contractReady ? 'Ready' : 'Preview',
+      tone: liveSodexReady ? sodexTone : contractReady ? 'var(--purple)' : 'var(--yellow)',
     },
     confirmation: {
       label: enhanced?.confirmation_required ? 'Required' : 'Cleared',
@@ -557,6 +689,12 @@ function buildReadiness(blockchainPayload, activeSignal, enhanced) {
     },
     estimatedGasLabel: `~0.003 ${nativeSymbol}`,
     networkLabel: networkName,
+    executionModeLabel: liveSodexReady ? sodexStatus.executionLabel : 'Internal fallback',
+    sodex: {
+      label: sodexStatus?.executionLabel || 'Preview only',
+      tone: sodexTone,
+      liveReady: liveSodexReady,
+    },
     networkConnected: connected,
     contractReady,
   };
@@ -579,9 +717,11 @@ export default async function handler(req, res) {
 
   const [
     pricesResult,
+    candlesResult,
     performanceResult,
     historyResult,
     blockchainResult,
+    sodexStatusResult,
     predictionResult,
     enhancedResult,
     modelStatusResult,
@@ -591,9 +731,11 @@ export default async function handler(req, res) {
     sentimentResult,
   ] = await Promise.allSettled([
     fetchBackendJson('market/prices'),
+    fetchBackendJson(`market/candles/${requestedSymbol}?interval=1h&limit=24`),
     fetchBackendJson('trades/performance'),
     fetchBackendJson('trades/history?limit=8'),
     fetchBackendJson('blockchain/status'),
+    fetchBackendJson('sodex/status'),
     fetchBackendJson(`predictions/${requestedSymbol}`),
     fetchBackendJson(`ai/enhanced-prediction/${requestedSymbol}`),
     fetchBackendJson('ai/model-status'),
@@ -635,6 +777,10 @@ export default async function handler(req, res) {
     performanceResult.status === 'fulfilled'
       ? performanceResult.value?.data || buildFallbackPerformance(historyItems)
       : buildFallbackPerformance(historyItems);
+  const activeCandleSeries =
+    candlesResult.status === 'fulfilled'
+      ? buildChartSeriesFromCandles(candlesResult.value?.data || {})
+      : [];
 
   const blockchainBase =
     blockchainResult.status === 'fulfilled'
@@ -662,6 +808,10 @@ export default async function handler(req, res) {
       totalSupply: tokenInfo?.total_supply || null,
     },
   };
+  const sodex =
+    sodexStatusResult.status === 'fulfilled'
+      ? resolveSodexStatus(sodexStatusResult.value)
+      : resolveSodexStatus();
 
   const prediction =
     predictionResult.status === 'fulfilled' && predictionResult.value?.success
@@ -699,7 +849,8 @@ export default async function handler(req, res) {
     prediction,
     enhanced,
     marketSentiment,
-    globalMarket
+    globalMarket,
+    activeCandleSeries
   );
 
   const requestedSignalInList = baseSignals.some((signal) => signal.symbol === requestedSymbol);
@@ -720,7 +871,7 @@ export default async function handler(req, res) {
     signals.slice().sort((left, right) => Number(right.change24h || 0) - Number(left.change24h || 0))[0]?.symbol ||
     'BTC';
 
-  const readiness = buildReadiness(blockchain, activeSignal, enhanced);
+  const readiness = buildReadiness(blockchain, activeSignal, enhanced, sodex);
   const updatedTimestamp =
     globalMarket?.timestamp ||
     enhanced?.timestamp ||
@@ -763,6 +914,7 @@ export default async function handler(req, res) {
         }),
       },
       blockchain,
+      sodex,
       modelStatus,
       readiness,
       updatedAt: globalMarket?.timestamp || enhanced?.timestamp || prediction?.timestamp || DEMO_UPDATED_AT,
