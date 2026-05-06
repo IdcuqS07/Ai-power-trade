@@ -1,6 +1,6 @@
 """
 AI Trading Platform - Comprehensive Backend
-Menggabungkan semua fitur: AI Prediction, Smart Contract, Oracle, Trading Engine
+Combines AI prediction, smart contract, oracle, and trading engine features
 Integrated with WEEX Exchange Live Data
 """
 from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks
@@ -149,7 +149,7 @@ from user_routes import router as user_router
 
 app = FastAPI(
     title="AI Trading Platform - Comprehensive",
-    description="Platform trading AI dengan Smart Contract, Oracle, dan Risk Management",
+    description="AI trading platform with smart contract, oracle, and risk management support",
     version="3.0"
 )
 
