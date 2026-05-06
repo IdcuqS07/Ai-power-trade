@@ -1216,11 +1216,8 @@ function RightExecutionPanel({
       </div>
 
       <div className={styles['sodex-card']}>
-        <div className={styles['sodex-header']}>
-          <div>
-            <strong>SoDEX Testnet API</strong>
-            <p>Browser-signed route for live SoDEX testnet execution.</p>
-          </div>
+        <div className={styles['compact-header']}>
+          <strong>SoDEX Testnet</strong>
           <span
             className={classes(
               'status-pill',
@@ -1231,62 +1228,46 @@ function RightExecutionPanel({
                   : 'status-pill-preview'
             )}
           >
-            {liveSodexReady ? 'Live Ready' : sodexConfigured ? 'Configured' : 'Preview'}
+            {liveSodexReady ? 'Live' : sodexConfigured ? 'Config' : 'Preview'}
           </span>
         </div>
-        <div className={styles['info-row']}>
-          <span>Route</span>
-          <strong style={{ color: sodexTone }}>
-            {sodexStatus?.executionLabel || 'Preview only'}
-          </strong>
-        </div>
-        <div className={styles['info-row']}>
-          <span>Market</span>
-          <strong>{String(sodexStatus?.marketType || 'spot').toUpperCase()}</strong>
-        </div>
-        <div className={styles['info-row']}>
-          <span>Signing Chain</span>
-          <strong>{sodexStatus?.signingChainId || '--'}</strong>
-        </div>
-        <div className={styles['info-row']}>
-          <span>Account</span>
-          <strong>{sodexStatus?.defaultAccountId || 'Not set'}</strong>
-        </div>
-        <div className={styles['sodex-note']}>
-          {sodexStatus?.readinessMessage ||
-            sodexStatus?.baseUrl ||
-            'Set SODEX_API_URL and SODEX_ACCOUNT_ID in the backend to enable browser-signed SoDEX routing.'}
+        <div className={styles['compact-grid']}>
+          <div className={styles['compact-item']}>
+            <span>Route</span>
+            <strong style={{ color: sodexTone }}>
+              {sodexStatus?.executionLabel || 'Preview'}
+            </strong>
+          </div>
+          <div className={styles['compact-item']}>
+            <span>Market</span>
+            <strong>{String(sodexStatus?.marketType || 'SPOT').toUpperCase()}</strong>
+          </div>
+          <div className={styles['compact-item']}>
+            <span>Account</span>
+            <strong>{sodexStatus?.defaultAccountId || 'Not set'}</strong>
+          </div>
         </div>
       </div>
 
       <div className={styles['ssi-card']}>
-        <div className={styles['ssi-header']}>
-          <div>
-            <strong>{ssiProgramName} Participation</strong>
-            <p>Holding and activity layer for staking readiness and reward previews.</p>
-          </div>
-          <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Staking Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
+        <div className={styles['compact-header']}>
+          <strong>{ssiProgramName}</strong>
+          <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
         </div>
-        <div className={styles['ssi-grid']}>
-          <div className={styles['ssi-item']}>
-            <span className={styles['ssi-label']}>Tier</span>
-            <strong className={styles['ssi-value']}>{ssiTierLabel}</strong>
+        <div className={styles['compact-grid']}>
+          <div className={styles['compact-item']}>
+            <span>Tier</span>
+            <strong>{ssiTierLabel}</strong>
           </div>
-          <div className={styles['ssi-item']}>
-            <span className={styles['ssi-label']}>Score</span>
-            <strong className={styles['ssi-value']}>{Number.isFinite(ssiScore) ? `${Math.round(ssiScore)}/100` : '--'}</strong>
+          <div className={styles['compact-item']}>
+            <span>Score</span>
+            <strong>{Number.isFinite(ssiScore) ? `${Math.round(ssiScore)}` : '--'}</strong>
           </div>
-          <div className={styles['ssi-item']}>
-            <span className={styles['ssi-label']}>APR Preview</span>
-            <strong className={styles['ssi-value']}>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
+          <div className={styles['compact-item']}>
+            <span>APR</span>
+            <strong>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
           </div>
         </div>
-        <div className={styles['ssi-note']}>{ssiPrimaryAction}</div>
-        {wallet.isConnected && Number.isFinite(ssiStakableBalance) ? (
-          <div className={styles['ssi-meta']}>
-            Stakable balance: <strong>{formatTokenAmount(ssiStakableBalance)} {tokenSymbol}</strong>
-          </div>
-        ) : null}
       </div>
 
       <div className={styles['ai-lock']}>
