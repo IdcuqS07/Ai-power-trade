@@ -170,6 +170,6 @@ Done when:
 
 - production deployment automation
 - CI or GitHub Actions restoration
-- VPS or Railway rollout steps
+- remote deployment rollout steps
 - legacy app resurrection
 - broad archive cleanup outside what blocks the active stack

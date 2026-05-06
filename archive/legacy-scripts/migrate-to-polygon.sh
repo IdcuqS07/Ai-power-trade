@@ -277,7 +277,7 @@ npm run dev
 ## 🔗 Links
 
 - **Frontend**: TBD (deploy to Vercel)
-- **Backend**: TBD (deploy to VPS/Render)
+- **Backend**: TBD (deploy to Render or another supported host)
 - **Contract**: TBD (deploy to Polygon Amoy)
 - **Explorer**: https://amoy.polygonscan.com/
 
