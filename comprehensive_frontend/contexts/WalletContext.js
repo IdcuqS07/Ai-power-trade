@@ -230,36 +230,18 @@ export function WalletProvider({ children }) {
         cooldownSeconds: Number(data.cooldown_seconds || 0),
       }));
 
-      console.log('[WalletContext] Balance updated:', data.balance);
+      console.log('[WalletContext] Balance updated - Token:', data.balance, 'atUSDT');
       return data;
     } catch (error) {
       console.error('[WalletContext] Balance fetch failed:', error);
-      console.warn('Wallet balance refresh failed, trying direct RPC fallback:', error);
       
-      // Fallback: query balance directly from wallet provider
-      if (typeof window !== 'undefined' && window.ethereum && nextAddress) {
-        try {
-          const balanceHex = await window.ethereum.request({
-            method: 'eth_getBalance',
-            params: [nextAddress, 'latest'],
-          });
-          
-          const balanceWei = BigInt(balanceHex);
-          const balanceEth = Number(balanceWei) / 1e18;
-          
-          safeSetWalletState((current) => ({
-            ...current,
-            tokenBalance: Number(balanceEth.toFixed(4)),
-            canClaim: false,
-            cooldownSeconds: 0,
-          }));
-          
-          console.info('[WalletContext] Balance loaded from direct RPC:', balanceEth.toFixed(4));
-          return { balance: balanceEth };
-        } catch (rpcError) {
-          console.warn('[WalletContext] Direct RPC balance query also failed:', rpcError);
-        }
-      }
+      // Set balance to null on error (don't use native balance as fallback)
+      safeSetWalletState((current) => ({
+        ...current,
+        tokenBalance: null,
+        canClaim: false,
+        cooldownSeconds: 0,
+      }));
       
       return null;
     }
