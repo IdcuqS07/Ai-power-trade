@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd comprehensive_frontend && npm install && npm run build",
+  "devCommand": "cd comprehensive_frontend && npm run dev",
+  "installCommand": "cd comprehensive_frontend && npm install",
+  "outputDirectory": "comprehensive_frontend/.next",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/comprehensive_frontend/$1" }
+  ]
+}
