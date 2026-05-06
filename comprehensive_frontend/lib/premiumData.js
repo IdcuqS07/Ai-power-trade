@@ -126,7 +126,7 @@ export const aiSignals = [
     catalysts: [
       { title: 'Ecosystem launch calendar', impact: 'High', horizon: '24h', detail: 'Upcoming launches keep speculative attention elevated.' },
       { title: 'Stablecoin transfer growth', impact: 'Medium', horizon: 'Today', detail: 'Capital velocity remains a positive signal for activity.' },
-      { title: 'Developer momentum', impact: 'Medium', horizon: 'This week', detail: 'Hackathon and tooling momentum support longer-term credibility.' },
+      { title: 'Developer momentum', impact: 'Medium', horizon: 'This week', detail: 'Community and tooling momentum support longer-term credibility.' },
     ],
     riskVectors: [
       { label: 'Funding reset', value: 47, commentary: 'Crowded perp positioning can force a fast flush.' },

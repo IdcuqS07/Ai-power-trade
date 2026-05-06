@@ -51,6 +51,24 @@ def env_flag(name: str, default: bool = False) -> bool:
         return default
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
+
+def build_sentiment_fallback(symbol: str, reason: str = "CoinGecko sentiment unavailable") -> Dict[str, Any]:
+    """Return a neutral sentiment payload when the external provider is throttled."""
+    normalized_symbol = symbol.upper().strip()
+    return {
+        "symbol": normalized_symbol,
+        "sentiment_up": 50,
+        "sentiment_down": 50,
+        "twitter_followers": 0,
+        "reddit_subscribers": 0,
+        "github_stars": 0,
+        "github_forks": 0,
+        "timestamp": datetime.now().isoformat(),
+        "source": "Fallback",
+        "fallback": True,
+        "message": reason,
+    }
+
 # Import Binance API, Binance Trading and Backtesting
 from binance_api import binance_api
 from binance_trading import binance_trading
@@ -2035,7 +2053,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except:
         pass
 
-# ============ Backtesting Endpoints (Hackathon Feature) ============
+# ============ Backtesting Endpoints ============
 
 @app.get("/api/backtest/{symbol}")
 async def run_backtest(
@@ -2291,6 +2309,12 @@ async def get_blockchain_status():
 async def get_blockchain_balance(address: str):
     """Get token balance for wallet address"""
     try:
+        if not blockchain_service.is_ready():
+            raise HTTPException(
+                status_code=503,
+                detail="Blockchain service is not ready to read atUSDT balances on Polygon Amoy"
+            )
+
         balance = blockchain_service.get_balance(address)
         can_claim = blockchain_service.can_claim_faucet(address)
         cooldown = blockchain_service.time_until_next_claim(address)
@@ -2305,8 +2329,53 @@ async def get_blockchain_balance(address: str):
                 "cooldown_hours": round(cooldown / 3600, 1)
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/blockchain/claim-faucet")
+async def claim_faucet_tokens(request: dict):
+    """
+    Claim faucet tokens - user must sign transaction from frontend
+    This endpoint returns transaction data for user to sign
+    """
+    try:
+        address = request.get("address")
+        if not address:
+            raise HTTPException(status_code=400, detail="Address required")
+        
+        if not blockchain_service.is_ready():
+            raise HTTPException(
+                status_code=503,
+                detail="Blockchain service unavailable"
+            )
+        
+        # Check if can claim
+        can_claim = blockchain_service.can_claim_faucet(address)
+        if not can_claim:
+            cooldown = blockchain_service.time_until_next_claim(address)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Faucet cooldown active. Wait {round(cooldown/3600, 1)} hours"
+            )
+        
+        # Return transaction data for frontend to sign
+        return {
+            "success": True,
+            "data": {
+                "contract_address": blockchain_service.contract_address,
+                "function": "claimFaucet",
+                "params": [],
+                "message": "Sign this transaction in your wallet to claim faucet tokens"
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/blockchain/verify-transaction")
 async def verify_blockchain_transaction(tx_hash: str):
@@ -2374,44 +2443,39 @@ async def get_ml_info():
     """Get ML model information"""
     return {"success": True, "data": ml_predictor.get_model_info()}
 
-# ============ Hackathon Info Endpoint ============
+# ============ Project Info Endpoint ============
 
-@app.get("/api/hackathon")
-async def get_hackathon_info():
-    """Get hackathon submission information"""
+@app.get("/api/project-info")
+async def get_project_info():
+    """Get project summary information"""
     return {
         "success": True,
-        "hackathon": {
-            "name": "WEEX AI Trading Hackathon",
-            "platform": "DoraHacks",
-            "url": "https://dorahacks.io/hackathon/weex-ai-trading/detail",
-            "project": {
-                "name": "AI Trading Platform - Comprehensive Edition",
-                "version": "3.0 Hackathon Special",
-                "features": [
-                    "AI-Powered Trading Signals",
-                    "Smart Contract Validation",
-                    "Oracle Verification Layer",
-                    "Real-time WEEX Integration",
-                    "Backtesting Engine",
-                    "Strategy Comparison",
-                    "Risk Management System",
-                    "Performance Analytics"
-                ],
-                "tech_stack": {
-                    "backend": "FastAPI + Python",
-                    "frontend": "Next.js + React",
-                    "ai": "NumPy + Custom Algorithms",
-                    "blockchain": "Smart Contract Simulation"
-                },
-                "innovation": [
-                    "Multi-layer validation system",
-                    "Automatic fallback mechanism",
-                    "Real-time WebSocket updates",
-                    "Advanced backtesting engine",
-                    "Comprehensive risk management"
-                ]
+        "project": {
+            "name": "AI Power Trade",
+            "platform": "Independent Submission",
+            "url": "",
+            "version": "3.0 Comprehensive Edition",
+            "features": [
+                "AI-guided trading signals",
+                "Explainability layer with confidence and research context",
+                "Wallet-aware execution workspace",
+                "Polygon Amoy demo settlement support",
+                "Trade history and performance views",
+                "Backtesting and strategy comparison tools"
+            ],
+            "tech_stack": {
+                "backend": "FastAPI + Python",
+                "frontend": "Next.js + React",
+                "ai": "Hybrid ML and explainability services",
+                "blockchain": "Polygon Amoy + Solidity + Web3.py"
             },
+            "innovation": [
+                "Transparent signal explainability",
+                "Provider-aware fallback architecture",
+                "Browser-signed execution flow",
+                "Unified market, AI, and execution workspace",
+                "Research context layered into trading decisions"
+            ],
             "demo": {
                 "frontend": "http://localhost:3000",
                 "backend": "http://localhost:8000",
@@ -2419,10 +2483,10 @@ async def get_hackathon_info():
             },
             "documentation": [
                 "README.md",
-                "HACKATHON_FEATURES.md",
-                "ARCHITECTURE.md",
-                "API_DOCUMENTATION.md",
-                "WEEX_INTEGRATION.md"
+                "GLOBAL_ROADMAP.md",
+                "blockchain/deployment.json",
+                "blockchain/AITradeUSDT_V2.sol",
+                "comprehensive_backend/RAILWAY_DEPLOYMENT.md"
             ]
         }
     }
@@ -2694,12 +2758,11 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("AI Trading Platform - Comprehensive Backend")
-    print("WEEX AI Trading Hackathon Edition")
+    print("AI Power Trade - Comprehensive Backend")
+    print("Project Info: http://localhost:8000/api/project-info")
     print("=" * 60)
     print("Starting server on http://localhost:8000")
     print("API Documentation: http://localhost:8000/docs")
-    print("Hackathon Info: http://localhost:8000/api/hackathon")
     print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
@@ -3021,20 +3084,31 @@ async def get_market_sentiment(symbol: str):
         sentiment = coingecko_api.get_market_sentiment(normalized_symbol)
         
         if not sentiment:
-            raise HTTPException(status_code=404, detail=f"No sentiment data for {normalized_symbol}")
+            sentiment = build_sentiment_fallback(
+                normalized_symbol,
+                reason=f"CoinGecko sentiment is temporarily unavailable for {normalized_symbol}",
+            )
         
         sentiment["source"] = sentiment.get("source") or "CoinGecko"
 
         return {
             "success": True,
-            "data": sentiment
+            "data": sentiment,
+            "fallback": bool(sentiment.get("fallback")),
         }
     
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Sentiment API error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "success": True,
+            "data": build_sentiment_fallback(
+                normalized_symbol,
+                reason=f"Sentiment fallback active because the upstream provider failed: {e}",
+            ),
+            "fallback": True,
+        }
 
 
 @app.get("/api/ai/global-market")
@@ -3047,18 +3121,29 @@ async def get_global_market():
         global_data = coingecko_api.get_global_market_data()
         
         if not global_data:
-            raise HTTPException(status_code=500, detail="Failed to fetch global market data")
+            return {
+                "success": True,
+                "data": None,
+                "fallback": True,
+                "message": "CoinGecko global market data is temporarily unavailable. Use cached frontend market overview until retry.",
+            }
         
         return {
             "success": True,
-            "data": global_data
+            "data": global_data,
+            "fallback": bool(global_data.get("stale")),
         }
     
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Global market API error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "success": True,
+            "data": None,
+            "fallback": True,
+            "message": f"Global market fallback active because the upstream provider failed: {e}",
+        }
 
 
 @app.get("/api/ai/trending")

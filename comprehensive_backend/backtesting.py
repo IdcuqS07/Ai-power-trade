@@ -1,6 +1,6 @@
 """
 Backtesting Engine for AI Trading Strategies
-Special feature for WEEX AI Trading Hackathon
+Simulation module for strategy validation and comparison
 """
 import numpy as np
 from typing import Dict, List, Optional
