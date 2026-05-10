@@ -87,6 +87,7 @@ class BinanceAPI:
             # Skip if API is known to be unavailable
             current_time = time.time()
             if not self.api_available and (current_time - self.last_check_time) < self.check_interval:
+                print(f"[Binance API] Skipping {symbol} - API marked unavailable")
                 return None
             
             binance_symbol = self.pair_mapping.get(symbol, symbol.replace('/', ''))
@@ -96,12 +97,13 @@ class BinanceAPI:
             if self._is_cache_valid(cache_key):
                 return self.cache[cache_key]['stats']
             
-            # Fetch from Binance with shorter timeout
+            # Fetch from Binance with longer timeout
             url = f"{self.base_url}/ticker/24hr"
             params = {'symbol': binance_symbol}
             
             try:
-                response = requests.get(url, params=params, timeout=0.5)  # Very short timeout
+                print(f"[Binance API] Fetching {binance_symbol} from {url}")
+                response = requests.get(url, params=params, timeout=3.0)  # Increased timeout
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -122,15 +124,20 @@ class BinanceAPI:
                     }
                     
                     self.api_available = True
+                    print(f"[Binance API] ✅ {binance_symbol}: ${stats['price']:.2f} ({stats['change_24h']:+.2f}%)")
                     return stats
-            except:
+                else:
+                    print(f"[Binance API] ❌ {binance_symbol}: HTTP {response.status_code}")
+            except Exception as e:
                 # Mark API as unavailable
                 self.api_available = False
                 self.last_check_time = current_time
+                print(f"[Binance API] ❌ {binance_symbol}: {type(e).__name__}: {str(e)}")
             
             return None
             
         except Exception as e:
+            print(f"[Binance API] ❌ Outer exception for {symbol}: {type(e).__name__}: {str(e)}")
             return None
     
     def get_all_prices(self) -> Dict[str, float]:

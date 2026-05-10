@@ -8,6 +8,7 @@ import { formatUsd } from '../lib/formatters';
 import { aiSignals } from '../lib/premiumData';
 import { parseChainIdValue, shortenAddress } from '../lib/walletNetwork';
 import styles from '../styles/ai-power-trade-workspace.module.css';
+import SosoValueCard from './SosoValueCard';
 
 const QUICK_AMOUNTS = [25, 50, 75, 100];
 const DEFAULT_PREVIEW_BALANCE = 10000;
@@ -186,33 +187,6 @@ function formatShortTime(value) {
   });
 }
 
-function formatElapsed(value) {
-  if (!value) {
-    return 'Just now';
-  }
-
-  const date = new Date(value);
-  const diffMs = Date.now() - date.getTime();
-
-  if (Number.isNaN(diffMs) || diffMs < 60_000) {
-    return 'Just now';
-  }
-
-  const diffHours = Math.floor(diffMs / 3_600_000);
-
-  if (diffHours >= 1) {
-    return `${diffHours}h ago`;
-  }
-
-  return `${Math.max(1, Math.floor(diffMs / 60_000))}m ago`;
-}
-
-function formatInteger(value) {
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-}
-
 function getTargetDelta(entryPrice, targetPrice, actionLabel) {
   if (!entryPrice) {
     return 0;
@@ -332,6 +306,7 @@ function createFallbackTerminalData() {
       executionModeLabel: 'Internal fallback',
       networkLabel: 'Polygon Amoy Testnet',
     },
+    research: {},
     updatedAt: FALLBACK_UPDATED_AT,
   };
 }
@@ -381,53 +356,60 @@ function getWalletButtonState(wallet) {
   };
 }
 
-function getModelBreakdown(confidencePercent, signalChange) {
-  return [
-    {
-      name: 'Signal Forecast',
-      score: clamp(confidencePercent + 2, 65, 99),
-      color: 'var(--green)',
-    },
-    {
-      name: 'Pattern Confirmation',
-      score: clamp(confidencePercent - 3, 60, 96),
-      color: 'var(--green)',
-    },
-    {
-      name: 'Market Sentiment',
-      score: clamp(Math.round(68 + Math.abs(Number(signalChange || 0)) * 2.8), 55, 92),
-      color: 'var(--yellow)',
-    },
-  ];
-}
-
 function getMetricTone(value) {
   return typeof value === 'string' && value ? value : 'var(--text-secondary)';
 }
 
-function getResearchScoreTone(score) {
-  if (score >= 75) {
-    return 'var(--green)';
+function getActionIcon(actionLabel = 'BUY') {
+  if (actionLabel === 'SELL') {
+    return '📉';
   }
 
-  if (score >= 50) {
-    return 'var(--yellow)';
+  if (actionLabel === 'HOLD') {
+    return '⚠️';
   }
 
-  return 'var(--red)';
+  return '🤖';
 }
 
-function getResearchRegimeTone(regime) {
-  switch (String(regime || '').toUpperCase()) {
-    case 'BULLISH':
-      return 'var(--green)';
-    case 'DEFENSIVE':
-      return 'var(--red)';
-    case 'NEUTRAL':
-      return 'var(--yellow)';
-    default:
-      return 'var(--text-tertiary)';
+function getActionToneClass(actionLabel = 'BUY') {
+  if (actionLabel === 'SELL') {
+    return 'tone-red';
   }
+
+  if (actionLabel === 'HOLD') {
+    return 'tone-yellow';
+  }
+
+  return 'tone-green';
+}
+
+function getSignalBadgeToneClass(actionLabel = 'BUY') {
+  if (actionLabel === 'SELL') {
+    return 'market-signal-sell';
+  }
+
+  if (actionLabel === 'HOLD') {
+    return 'market-signal-hold';
+  }
+
+  return 'market-signal-buy';
+}
+
+function getConfidenceFillToneClass(actionLabel = 'BUY') {
+  if (actionLabel === 'SELL') {
+    return 'confidence-fill-sell';
+  }
+
+  if (actionLabel === 'HOLD') {
+    return 'confidence-fill-hold';
+  }
+
+  return 'confidence-fill-buy';
+}
+
+function getSignedToneClass(value) {
+  return Number(value || 0) >= 0 ? 'tone-green' : 'tone-red';
 }
 
 function getTopMovers(signals, activeSymbol) {
@@ -617,7 +599,7 @@ function WorkspaceHeader({
             BTC Dom <strong>{marketOverview.btcDominanceLabel || '53.8%'}</strong>
           </div>
           <div className={styles.stat}>
-            AI Accuracy <strong style={{ color: 'var(--green)' }}>{marketOverview.aiAccuracyLabel || '87.3%'}</strong>
+            AI Accuracy <strong className={styles['tone-green']}>{marketOverview.aiAccuracyLabel || '87.3%'}</strong>
           </div>
         </div>
       </div>
@@ -631,15 +613,65 @@ function PredictionsSidebar({
   handleSignalSelect,
   marketOverview,
 }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('ALL');
+
+  const filteredSignals = signals.filter((signal) => {
+    // Search filter
+    const matchesSearch = signal.symbol.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+
+    // Action filter
+    if (activeFilter === 'ALL') return true;
+    const actionLabel = resolveAction(signal.signal);
+    return actionLabel === activeFilter;
+  });
+
   return (
     <aside className={styles.sidebar}>
-      <div className={styles['sidebar-header']}>
-        <span className={styles['sidebar-title']}>Signal Watchlist</span>
-        <span className={styles['sidebar-count']}>{signals.length} Assets</span>
+      <div className={styles['sidebar-search']}>
+        <input
+          type="text"
+          className={styles['search-input']}
+          placeholder="Search assets..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      <div className={styles['sidebar-filters']}>
+        <button
+          type="button"
+          className={classes('filter-tab', activeFilter === 'ALL' && 'active')}
+          onClick={() => setActiveFilter('ALL')}
+        >
+          ALL
+        </button>
+        <button
+          type="button"
+          className={classes('filter-tab', activeFilter === 'BUY' && 'active')}
+          onClick={() => setActiveFilter('BUY')}
+        >
+          BUY
+        </button>
+        <button
+          type="button"
+          className={classes('filter-tab', activeFilter === 'SELL' && 'active')}
+          onClick={() => setActiveFilter('SELL')}
+        >
+          SELL
+        </button>
+        <button
+          type="button"
+          className={classes('filter-tab', activeFilter === 'HOLD' && 'active')}
+          onClick={() => setActiveFilter('HOLD')}
+        >
+          HOLD
+        </button>
       </div>
 
       <div className={styles['market-list']}>
-        {signals.map((signal) => {
+        {filteredSignals.map((signal) => {
           const actionLabel = resolveAction(signal.signal);
           const confidencePercent = Math.round(Number(signal.confidence || 0) * 100);
           const change = Number(signal.change24h || 0);
@@ -659,25 +691,15 @@ function PredictionsSidebar({
               </div>
               <div className={styles['market-price']}>{formatMarketPrice(signal.price || 0)}</div>
               <span
-                className={styles['market-signal']}
-                style={
-                  actionLabel === 'HOLD'
-                    ? {
-                        background: 'rgba(255,215,79,0.12)',
-                        borderColor: 'rgba(255,215,79,0.3)',
-                        color: 'var(--yellow)',
-                      }
-                    : undefined
-                }
+                className={classes('market-signal', getSignalBadgeToneClass(actionLabel))}
               >
-                {actionLabel === 'HOLD' ? '⚠️' : '🤖'} {actionLabel} · {confidencePercent}%
+                {getActionIcon(actionLabel)} {actionLabel} · {confidencePercent}%
               </span>
               <div className={styles['confidence-bar']}>
                 <div
-                  className={styles['confidence-fill']}
+                  className={classes('confidence-fill', getConfidenceFillToneClass(actionLabel))}
                   style={{
                     width: `${confidencePercent}%`,
-                    background: actionLabel === 'HOLD' ? 'var(--yellow)' : undefined,
                   }}
                 />
               </div>
@@ -693,13 +715,13 @@ function PredictionsSidebar({
             <span className={styles['global-stat-label']}>24h Volume</span>
           </div>
           <div className={styles['global-stat']}>
-            <span className={styles['global-stat-value']} style={{ color: 'var(--green)' }}>
+            <span className={classes('global-stat-value', 'tone-green')}>
               {marketOverview.fearGreed || 72}
             </span>
             <span className={styles['global-stat-label']}>Fear &amp; Greed</span>
           </div>
           <div className={styles['global-stat']}>
-            <span className={styles['global-stat-value']} style={{ color: 'var(--purple)' }}>
+            <span className={classes('global-stat-value', 'tone-purple')}>
               {marketOverview.trendingSymbol || 'AI'}
             </span>
             <span className={styles['global-stat-label']}>Trending</span>
@@ -726,7 +748,6 @@ function MainDecisionSection({
   stopPrice,
   actionLabel,
   confidencePercent,
-  performance,
   marketOverview,
   readiness,
   change24h,
@@ -734,11 +755,9 @@ function MainDecisionSection({
   handleAutoFill,
   previewNetwork,
   nativeSymbol,
+  research,
+  researchLoading,
 }) {
-  const modelBreakdown =
-    Array.isArray(activeSignal?.modelBreakdown) && activeSignal.modelBreakdown.length
-      ? activeSignal.modelBreakdown
-      : getModelBreakdown(confidencePercent, change24h);
   const volatility = getVolatilityLabel(activeSignal.riskScore);
   const priceLevels = getPriceLevels(activeSignal, entryPrice);
   const readinessState = readiness || {};
@@ -746,37 +765,12 @@ function MainDecisionSection({
     label: 'Cleared',
     tone: 'var(--green)',
   };
-  const researchContext = activeSignal?.researchContext || null;
-  const researchAvailable = Boolean(researchContext?.available);
-  const researchScore = clamp(Math.round(Number(researchContext?.catalyst_score || 0)), 0, 100);
-  const researchScoreTone = getResearchScoreTone(researchScore);
-  const researchRegime = String(researchContext?.macro_regime || 'UNAVAILABLE').toUpperCase();
-  const researchRegimeTone = getResearchRegimeTone(researchRegime);
-  const researchHeadlineCount = Math.max(
-    0,
-    Number(
-      researchContext?.news_count ||
-        (Array.isArray(researchContext?.latest_news) ? researchContext.latest_news.length : 0)
-    )
-  );
-  const researchLabel = String(researchContext?.catalyst_label || 'Preview').toUpperCase();
-  const researchStories = Array.isArray(researchContext?.latest_news)
-    ? researchContext.latest_news.slice(0, 2)
-    : [];
-  const researchRationale =
-    Array.isArray(researchContext?.rationale) && researchContext.rationale.length
-      ? researchContext.rationale[0]
-      : researchContext?.error
-        ? researchContext.error
-        : researchAvailable
-          ? `${activeSymbol} research context is live through SoSoValue.`
-          : `SoSoValue research will appear here once the live overlay returns for ${activeSymbol}.`;
 
   return (
     <main className={styles.main}>
       <div className={styles['ai-decision']}>
         <div className={styles['ai-decision-top']}>
-          <div className={styles['decision-card']}>
+          <div className={classes('decision-card', 'decision-card-expanded')}>
             <div className={styles['decision-header']}>
               <div className={styles['decision-info']}>
                 <h3>AI Decision</h3>
@@ -834,143 +828,30 @@ function MainDecisionSection({
             </div>
 
             <div className={styles['decision-actions']}>
-              <Link href={explainerHref} className={classes('btn', 'btn-outline')} style={{ flex: 1 }}>
+              <Link href={explainerHref} className={classes('btn', 'btn-outline', 'decision-action')}>
                 Open AI Explainer
               </Link>
-              <button type="button" className={classes('btn', 'btn-fill')} style={{ flex: 1 }} onClick={handleAutoFill}>
+              <button type="button" className={classes('btn', 'btn-fill', 'decision-action')} onClick={handleAutoFill}>
                 Auto Fill Trade
               </button>
             </div>
           </div>
 
-          <div className={styles['insight-card']}>
-            <div className={styles['insight-title']}>Signal Breakdown</div>
-
-            {modelBreakdown.map((item) => (
-              <div key={item.name} className={styles['model-row']}>
-                <div className={styles['model-header']}>
-                  <span className={styles['model-name']}>{item.name}</span>
-                  <span className={styles['model-score']} style={{ color: item.color }}>
-                    {item.score}%
-                  </span>
-                </div>
-                <div className={styles['progress-bar']}>
-                  <div
-                    className={styles['progress-fill']}
-                    style={{
-                      width: `${item.score}%`,
-                      background: item.color === 'var(--yellow)' ? 'var(--yellow)' : undefined,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-
-            <div className={styles['compact-stat-grid']} style={{ marginTop: 'var(--space-md)' }}>
-              <div className={styles['compact-stat']}>
-                <span className={styles['compact-stat-value']} style={{ color: 'var(--green)' }}>
-                  {Number(performance.win_rate || 0).toFixed(1)}%
-                </span>
-                <span className={styles['compact-stat-label']}>Win Rate</span>
-              </div>
-              <div className={styles['compact-stat']}>
-                <span className={styles['compact-stat-value']} style={{ color: 'var(--green)' }}>
-                  {formatSignedPercent(performance.total_profit || 0, 1)}
-                </span>
-                <span className={styles['compact-stat-label']}>Total PnL</span>
-              </div>
-              <div className={styles['compact-stat']}>
-                <span className={styles['compact-stat-value']}>{formatInteger(performance.total_trades || 0)}</span>
-                <span className={styles['compact-stat-label']}>Trades</span>
-              </div>
-              <div className={styles['compact-stat']}>
-                <span className={styles['compact-stat-value']}>{activeSignal.horizon || '4H'}</span>
-                <span className={styles['compact-stat-label']}>Avg Hold</span>
-              </div>
-            </div>
-
-            <div className={styles['research-panel']}>
-              <div className={styles['research-panel-header']}>
-                <span className={styles['insight-title']} style={{ margin: 0 }}>
-                  SoSoValue Research
-                </span>
-                <span
-                  className={classes(
-                    'status-pill',
-                    researchAvailable ? 'status-pill-live' : 'status-pill-preview'
-                  )}
-                >
-                  {researchAvailable ? 'Live' : 'Preview'}
-                </span>
-              </div>
-
-              <div className={styles['research-metrics']}>
-                <div className={styles['research-metric']}>
-                  <span
-                    className={styles['research-metric-value']}
-                    style={{ color: researchAvailable ? researchScoreTone : 'var(--text-tertiary)' }}
-                  >
-                    {researchAvailable ? `${researchScore}/100` : '--'}
-                  </span>
-                  <span className={styles['research-metric-label']}>Catalyst</span>
-                </div>
-                <div className={styles['research-metric']}>
-                  <span
-                    className={styles['research-metric-value']}
-                    style={{ color: researchAvailable ? researchRegimeTone : 'var(--text-tertiary)' }}
-                  >
-                    {researchAvailable ? researchRegime : 'UNAVAILABLE'}
-                  </span>
-                  <span className={styles['research-metric-label']}>Regime</span>
-                </div>
-                <div className={styles['research-metric']}>
-                  <span
-                    className={styles['research-metric-value']}
-                    style={{ color: researchAvailable ? 'var(--cyan)' : 'var(--text-tertiary)' }}
-                  >
-                    {researchAvailable ? researchHeadlineCount : '--'}
-                  </span>
-                  <span className={styles['research-metric-label']}>Headlines</span>
-                </div>
-              </div>
-
-              <div className={styles['research-rationale']}>{researchRationale}</div>
-
-              {researchStories.length ? (
-                <div className={styles['research-story-list']}>
-                  {researchStories.map((article, index) => (
-                    <div
-                      key={`${article.title || 'research'}-${index}`}
-                      className={styles['research-story']}
-                    >
-                      <div className={styles['research-story-header']}>
-                        <span className={styles['research-story-tag']}>
-                          {article.category_label || researchLabel}
-                        </span>
-                        <span className={styles['research-story-time']}>
-                          {formatElapsed(article.published_at)}
-                        </span>
-                      </div>
-                      <div className={styles['research-story-title']}>{article.title}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className={styles['research-empty']}>
-                  No live research headlines yet for {activeSymbol}.
-                </div>
-              )}
-            </div>
-          </div>
+          <SosoValueCard
+            className={styles['sov-card-slot']}
+            symbol={activeSymbol}
+            research={research}
+            loading={researchLoading}
+          />
         </div>
 
         <div className={styles['ai-decision-bottom']}>
           <div className={styles['decision-card-compact']}>
             <div className={styles['decision-header-compact']}>
-              <span className={styles['insight-title']} style={{ margin: 0 }}>
+              <span className={classes('insight-title', 'compact-title')}>
                 Market Data
               </span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--green)' }}>
+              <span className={classes('card-status', 'tone-green')}>
                 {marketOverview.liveMarketLabel || 'LIVE'}
               </span>
             </div>
@@ -1005,10 +886,10 @@ function MainDecisionSection({
 
           <div className={styles['decision-card-compact']}>
             <div className={styles['decision-header-compact']}>
-              <span className={styles['insight-title']} style={{ margin: 0 }}>
+              <span className={classes('insight-title', 'compact-title')}>
                 Execution Readiness
               </span>
-              <span style={{ fontSize: '0.7rem', color: readinessState.statusTone || 'var(--green)' }}>
+              <span className={styles['card-status']} style={{ color: readinessState.statusTone || 'var(--green)' }}>
                 {readinessState.statusLabel || 'READY'}
               </span>
             </div>
@@ -1047,7 +928,7 @@ function MainDecisionSection({
                 <span className={styles['readiness-label']}>Volatility</span>
               </div>
             </div>
-            <div className={styles['info-row']} style={{ marginTop: 'var(--space-sm)' }}>
+            <div className={classes('info-row', 'info-row-top-gap')}>
               <span>Est. Fee</span>
               <strong>{readinessState.estimatedGasLabel || `~0.003 ${nativeSymbol}`}</strong>
             </div>
@@ -1067,14 +948,14 @@ function MainDecisionSection({
 
           <div className={styles['decision-card-compact']}>
             <div className={styles['decision-header-compact']}>
-              <span className={styles['insight-title']} style={{ margin: 0 }}>
+              <span className={classes('insight-title', 'compact-title')}>
                 Price Levels
               </span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--cyan)' }}>{activeSymbol}/USDT</span>
+              <span className={classes('card-status', 'tone-cyan')}>{activeSymbol}/USDT</span>
             </div>
             <div className={styles['info-row']}>
               <span>Current Price</span>
-              <strong style={{ color: 'var(--cyan)' }}>{formatUsd(priceLevels.currentPrice)}</strong>
+              <strong className={styles['tone-cyan']}>{formatUsd(priceLevels.currentPrice)}</strong>
             </div>
             <div className={styles['info-row']}>
               <span>24h High</span>
@@ -1086,7 +967,7 @@ function MainDecisionSection({
             </div>
             <div className={styles['info-row']}>
               <span>24h Change</span>
-              <strong style={{ color: change24h >= 0 ? 'var(--green)' : 'var(--red)' }}>
+              <strong className={styles[getSignedToneClass(change24h)]}>
                 {formatSignedPercent(change24h, 1)}
               </strong>
             </div>
@@ -1127,18 +1008,25 @@ function RightExecutionPanel({
       ? 'Wallet connected'
       : 'Wallet ready';
   const walletSummary = wallet.isConnected ? shortenAddress(wallet.account) : 'No wallet connected';
+  const liveBalancePending =
+    wallet.isConnected &&
+    !hasLiveBalance &&
+    (wallet.tokenBalanceStatus === 'idle' || wallet.tokenBalanceStatus === 'loading');
+  const balanceSummary = hasLiveBalance
+    ? `${formatTokenAmount(availableBalance)} ${tokenSymbol}`
+    : !wallet.isConnected
+      ? `${formatTokenAmount(DEFAULT_PREVIEW_BALANCE)} ${tokenSymbol} preview`
+      : wallet.isWrongNetwork
+        ? `Switch network to read ${tokenSymbol}`
+        : liveBalancePending
+          ? `Reading live ${tokenSymbol}...`
+          : `Live ${tokenSymbol} unavailable`;
   const ssiProfile = wallet.ssiProfile || null;
   const ssiProgramName = ssiProfile?.program?.name || 'SSI';
   const ssiTierLabel = ssiProfile?.holding?.tier?.label || (wallet.isConnected ? 'Syncing' : 'Preview');
   const ssiScore = Number(ssiProfile?.participation?.score);
   const ssiApr = Number(ssiProfile?.rewards?.estimated_program_apr);
-  const ssiStakableBalance = Number(ssiProfile?.holding?.stakable_balance);
   const ssiStakingReady = Boolean(ssiProfile?.holding?.staking_ready);
-  const ssiPrimaryAction =
-    ssiProfile?.actions?.[0] ||
-    (wallet.isConnected
-      ? 'SSI participation is syncing from token holdings and execution history.'
-      : 'Connect a wallet to calculate SSI participation from holdings and execution flow.');
   const readinessState = readiness || {};
   const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
   const sodexConfigured = Boolean(sodexStatus?.configured);
@@ -1202,249 +1090,241 @@ function RightExecutionPanel({
 
   return (
     <aside className={styles.panel}>
-      <div className={styles['wallet-card']}>
-        <strong>Execution Access</strong>
-        <br />
-        {walletMode} · {previewNetwork?.chainName || 'Polygon Amoy Testnet'} · {walletSummary}
-        <br />
-        Balance:{' '}
-        <strong>
-          {formatTokenAmount(availableBalance)} {tokenSymbol}
-          {!hasLiveBalance ? ' preview' : ''}
-        </strong>{' '}
-        · Est. fee: ~0.003 {nativeSymbol}
-      </div>
+      <div className={styles['panel-meta']}>
+        <div className={styles['wallet-card']}>
+          <strong>Execution Access</strong>
+          <br />
+          {walletMode} · {previewNetwork?.chainName || 'Polygon Amoy Testnet'} · {walletSummary}
+          <br />
+          Balance: <strong>{balanceSummary}</strong>{' '}
+          · Est. fee: ~0.003 {nativeSymbol}
+        </div>
 
-      <div className={styles['sodex-card']}>
-        <div className={styles['compact-header']}>
-          <strong>SoDEX Testnet</strong>
-          <span
-            className={classes(
-              'status-pill',
-              liveSodexReady
-                ? 'status-pill-live'
-                : sodexConfigured
-                  ? 'status-pill-warn'
-                  : 'status-pill-preview'
-            )}
-          >
-            {liveSodexReady ? 'Live' : sodexConfigured ? 'Config' : 'Preview'}
-          </span>
-        </div>
-        <div className={styles['compact-grid']}>
-          <div className={styles['compact-item']}>
-            <span>Route</span>
-            <strong style={{ color: sodexTone }}>
-              {sodexStatus?.executionLabel || 'Preview'}
-            </strong>
-          </div>
-          <div className={styles['compact-item']}>
-            <span>Market</span>
-            <strong>{String(sodexStatus?.marketType || 'SPOT').toUpperCase()}</strong>
-          </div>
-          <div className={styles['compact-item']}>
-            <span>Account</span>
-            <strong>{sodexStatus?.defaultAccountId || 'Not set'}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles['ssi-card']}>
-        <div className={styles['compact-header']}>
-          <strong>{ssiProgramName}</strong>
-          <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
-        </div>
-        <div className={styles['compact-grid']}>
-          <div className={styles['compact-item']}>
-            <span>Tier</span>
-            <strong>{ssiTierLabel}</strong>
-          </div>
-          <div className={styles['compact-item']}>
-            <span>Score</span>
-            <strong>{Number.isFinite(ssiScore) ? `${Math.round(ssiScore)}` : '--'}</strong>
-          </div>
-          <div className={styles['compact-item']}>
-            <span>APR</span>
-            <strong>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles['ai-lock']}>
-        <div className={styles['ai-lock-header']}>
-          <div className={styles['ai-lock-icon']}>🧠</div>
-          <div className={styles['ai-lock-info']}>
-            <strong>AI Recommendation Locked</strong>
-            <p>Trade based on AI signal. Cannot be changed manually.</p>
-          </div>
-        </div>
-        <div className={styles['ai-lock-grid']}>
-          <div className={styles['ai-lock-item']}>
-            <div className={styles['ai-lock-label']}>Symbol</div>
-            <div className={styles['ai-lock-value']}>{activeSignal.symbol}</div>
-          </div>
-          <div className={styles['ai-lock-item']}>
-            <div className={styles['ai-lock-label']}>Action</div>
-            <div
-              className={styles['ai-lock-value']}
-              style={{
-                color:
-                  actionLabel === 'SELL'
-                    ? 'var(--red)'
-                    : actionLabel === 'HOLD'
-                      ? 'var(--yellow)'
-                      : 'var(--green)',
-              }}
+        <div className={styles['sodex-card']}>
+          <div className={styles['compact-header']}>
+            <strong>SoDEX Testnet</strong>
+            <span
+              className={classes(
+                'status-pill',
+                liveSodexReady
+                  ? 'status-pill-live'
+                  : sodexConfigured
+                    ? 'status-pill-warn'
+                    : 'status-pill-preview'
+              )}
             >
-              {actionLabel}
-            </div>
-          </div>
-          <div className={styles['ai-lock-item']}>
-            <div className={styles['ai-lock-label']}>Confidence</div>
-            <div className={styles['ai-lock-value']} style={{ color: 'var(--green)' }}>
-              {confidencePercent}%
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        className={styles['btn-execute-hero']}
-        onClick={handleExecuteTrade}
-        disabled={executionState === 'submitting' || actionLabel === 'HOLD'}
-      >
-        {executeLabel}
-        <small>{executeSubLabel}</small>
-      </button>
-
-      {feedback && (
-        <div className={classes('execution-feedback', feedback.tone === 'success' ? 'feedback-success' : 'feedback-error')}>
-          <strong>{feedback.tone === 'success' ? 'Execution Ready' : 'Execution Blocked'}</strong>
-          <p>{feedback.message}</p>
-          {feedback.tradeId && <span>Trade ID: {feedback.tradeId}</span>}
-          {feedback.executionMode && <span>Route: {feedback.executionMode}</span>}
-          {feedback.oracleStatus && <span>Signal Check: {feedback.oracleStatus}</span>}
-          {feedback.validationStatus && <span>Validation: {feedback.validationStatus}</span>}
-          {feedback.settlementStatus && <span>Execution: {feedback.settlementStatus}</span>}
-          {feedback.recordHash && <span>Reference: {shortenAddress(feedback.recordHash)}</span>}
-        </div>
-      )}
-
-      <div className={styles.field}>
-        <label className={styles['field-label']} htmlFor="html-workspace-amount">
-          Execution Amount ({tokenSymbol})
-        </label>
-        <div className={styles['amount-input']}>
-          <input
-            id="html-workspace-amount"
-            type="text"
-            value={amountInput}
-            onChange={(event) => setAmountInput(event.target.value.replace(/[^\d.]/g, ''))}
-          />
-          <button type="button" className={styles['btn-max']} onClick={() => applyQuickAmount(100)}>
-            MAX
-          </button>
-          <span className={styles['amount-unit']}>{tokenSymbol}</span>
-        </div>
-        <div className={styles['quick-buttons']}>
-          {QUICK_AMOUNTS.map((percent) => {
-            const isActive =
-              percent === 100
-                ? amountPercent >= 99.5
-                : amountPercent >= percent - 1 && amountPercent < percent + 1;
-
-            return (
-              <button
-                type="button"
-                key={percent}
-                className={classes('btn-quick', isActive && 'active')}
-                onClick={() => applyQuickAmount(percent)}
-              >
-                {percent}%
-              </button>
-            );
-          })}
-        </div>
-        <div className={styles['amount-hint']}>
-          <span>
-            Available: <strong>{formatTokenAmount(availableBalance)}</strong>
-          </span>
-          <span>Minimum: 1</span>
-        </div>
-      </div>
-
-      <div className={styles['summary-grid']}>
-        <div className={styles['summary-item']}>
-          <div className={styles['summary-label']}>You Allocate</div>
-          <div className={styles['summary-value']}>{formatTokenAmount(safeAmount)} {tokenSymbol}</div>
-        </div>
-        <div className={styles['summary-item']}>
-          <div className={styles['summary-label']}>Execution Price</div>
-          <div className={styles['summary-value']}>{formatUsd(entryPrice)}</div>
-        </div>
-        <div className={styles['summary-item']}>
-          <div className={styles['summary-label']}>Take Profit</div>
-          <div className={styles['summary-value']} style={{ color: 'var(--green)' }}>
-            {formatUsd(targetPrice)}
-          </div>
-        </div>
-      </div>
-
-      <div className={styles['contract-preview']}>
-        <div className={styles['contract-header']}>
-          <span className={styles['contract-title']}>Execution Preview</span>
-          <span className={styles['contract-status']}>{contractStatus}</span>
-        </div>
-        <div className={styles['contract-body']}>
-          <div className={styles['contract-code']}>
-            executeTrade("{activeSignal.symbol}", "{actionLabel}", {Math.round(safeAmount || 0)}, {Math.round(entryPrice || 0)})
-          </div>
-          <div className={styles['contract-effects']}>
-            <div className={styles['effect-item']}>Reserve {formatTokenAmount(safeAmount)} {tokenSymbol}</div>
-            <div className={styles['effect-item']}>Run signal and validation checks</div>
-            <div className={styles['effect-item']}>Create execution record</div>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles['execution-steps']}>
-        <div className={styles['steps-header']}>
-          <span className={styles['contract-title']}>Execute Trade</span>
-          <span className={styles['contract-status']}>{stepsStatus}</span>
-        </div>
-        <div className={styles['steps-body']}>
-          <div className={classes('check-item', wallet.isConnected ? 'ok' : 'warn')}>
-            <span>Wallet access</span>
-            <span className={styles['check-value']}>{wallet.isConnected ? shortenAddress(wallet.account) : 'Connect wallet'}</span>
-          </div>
-          <div className={classes('check-item', wallet.isWrongNetwork ? 'warn' : 'ok')}>
-            <span>Network</span>
-            <span className={styles['check-value']}>{previewNetwork?.chainName || 'Polygon Amoy'} {chainId || 80002}</span>
-          </div>
-          <div className={classes('check-item', availableBalance >= safeAmount && safeAmount >= 1 ? 'ok' : 'warn')}>
-            <span>Funds check</span>
-            <span className={styles['check-value']}>
-              {formatTokenAmount(availableBalance)} ≥ {formatTokenAmount(safeAmount || 0)}
+              {liveSodexReady ? 'Live' : sodexConfigured ? 'Config' : 'Preview'}
             </span>
           </div>
-          <div className={classes('check-item', safeAmount >= 1 ? 'ok' : 'warn')}>
-            <span>Allocation</span>
-            <span className={styles['check-value']}>{formatTokenAmount(safeAmount || 0)} {tokenSymbol}</span>
+          <div className={styles['compact-grid']}>
+            <div className={styles['compact-item']}>
+              <span>Route</span>
+              <strong style={{ color: sodexTone }}>
+                {sodexStatus?.executionLabel || 'Preview'}
+              </strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Market</span>
+              <strong>{String(sodexStatus?.marketType || 'SPOT').toUpperCase()}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Account</span>
+              <strong>{sodexStatus?.defaultAccountId || 'Not set'}</strong>
+            </div>
           </div>
+        </div>
 
-          <div className={styles['steps-grid']}>
-            <div className={classes('step-item', 'active')}>
-              <span className={styles['step-number']}>1</span>
-              <span className={styles['step-label']}>Pre-check</span>
+        <div className={styles['ssi-card']}>
+          <div className={styles['compact-header']}>
+            <strong>{ssiProgramName}</strong>
+            <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
+          </div>
+          <div className={styles['compact-grid']}>
+            <div className={styles['compact-item']}>
+              <span>Tier</span>
+              <strong>{ssiTierLabel}</strong>
             </div>
-            <div className={classes('step-item', (executionState === 'submitting' || executionState === 'success') && 'active')}>
-              <span className={styles['step-number']}>2</span>
-              <span className={styles['step-label']}>Approve</span>
+            <div className={styles['compact-item']}>
+              <span>Score</span>
+              <strong>{Number.isFinite(ssiScore) ? `${Math.round(ssiScore)}` : '--'}</strong>
             </div>
-            <div className={classes('step-item', executionState === 'success' && 'active')}>
-              <span className={styles['step-number']}>3</span>
-              <span className={styles['step-label']}>Confirmed</span>
+            <div className={styles['compact-item']}>
+              <span>APR</span>
+              <strong>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles['ai-lock']}>
+          <div className={styles['ai-lock-header']}>
+            <div className={styles['ai-lock-icon']}>🧠</div>
+            <div className={styles['ai-lock-info']}>
+              <strong>AI Recommendation Locked</strong>
+              <p>Trade based on AI signal. Cannot be changed manually.</p>
+            </div>
+          </div>
+          <div className={styles['ai-lock-grid']}>
+            <div className={styles['ai-lock-item']}>
+              <div className={styles['ai-lock-label']}>Symbol</div>
+              <div className={styles['ai-lock-value']}>{activeSignal.symbol}</div>
+            </div>
+            <div className={styles['ai-lock-item']}>
+              <div className={styles['ai-lock-label']}>Action</div>
+              <div className={classes('ai-lock-value', getActionToneClass(actionLabel))}>
+                {actionLabel}
+              </div>
+            </div>
+            <div className={styles['ai-lock-item']}>
+              <div className={styles['ai-lock-label']}>Confidence</div>
+              <div className={classes('ai-lock-value', 'tone-green')}>
+                {confidencePercent}%
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles['panel-sticky-controls']}>
+        <button
+          type="button"
+          className={styles['btn-execute-hero']}
+          onClick={handleExecuteTrade}
+          disabled={executionState === 'submitting' || actionLabel === 'HOLD'}
+        >
+          {executeLabel}
+          <small>{executeSubLabel}</small>
+        </button>
+
+        {feedback && (
+          <div className={classes('execution-feedback', feedback.tone === 'success' ? 'feedback-success' : 'feedback-error')}>
+            <strong>{feedback.tone === 'success' ? 'Execution Ready' : 'Execution Blocked'}</strong>
+            <p>{feedback.message}</p>
+            {feedback.tradeId && <span>Trade ID: {feedback.tradeId}</span>}
+            {feedback.executionMode && <span>Route: {feedback.executionMode}</span>}
+            {feedback.oracleStatus && <span>Signal Check: {feedback.oracleStatus}</span>}
+            {feedback.validationStatus && <span>Validation: {feedback.validationStatus}</span>}
+            {feedback.settlementStatus && <span>Execution: {feedback.settlementStatus}</span>}
+            {feedback.recordHash && <span>Reference: {shortenAddress(feedback.recordHash)}</span>}
+          </div>
+        )}
+
+        <div className={styles.field}>
+          <label className={styles['field-label']} htmlFor="html-workspace-amount">
+            Execution Amount ({tokenSymbol})
+          </label>
+          <div className={styles['amount-input']}>
+            <input
+              id="html-workspace-amount"
+              type="text"
+              value={amountInput}
+              onChange={(event) => setAmountInput(event.target.value.replace(/[^\d.]/g, ''))}
+            />
+            <button type="button" className={styles['btn-max']} onClick={() => applyQuickAmount(100)}>
+              MAX
+            </button>
+            <span className={styles['amount-unit']}>{tokenSymbol}</span>
+          </div>
+          <div className={styles['quick-buttons']}>
+            {QUICK_AMOUNTS.map((percent) => {
+              const isActive =
+                percent === 100
+                  ? amountPercent >= 99.5
+                  : amountPercent >= percent - 1 && amountPercent < percent + 1;
+
+              return (
+                <button
+                  type="button"
+                  key={percent}
+                  className={classes('btn-quick', isActive && 'active')}
+                  onClick={() => applyQuickAmount(percent)}
+                >
+                  {percent}%
+                </button>
+              );
+            })}
+          </div>
+          <div className={styles['amount-hint']}>
+            <span>
+              Available: <strong>{formatTokenAmount(availableBalance)}</strong>
+            </span>
+            <span>Minimum: 1</span>
+          </div>
+        </div>
+
+        <div className={styles['summary-grid']}>
+          <div className={styles['summary-item']}>
+            <div className={styles['summary-label']}>You Allocate</div>
+            <div className={styles['summary-value']}>{formatTokenAmount(safeAmount)} {tokenSymbol}</div>
+          </div>
+          <div className={styles['summary-item']}>
+            <div className={styles['summary-label']}>Execution Price</div>
+            <div className={styles['summary-value']}>{formatUsd(entryPrice)}</div>
+          </div>
+          <div className={styles['summary-item']}>
+            <div className={styles['summary-label']}>Take Profit</div>
+            <div className={classes('summary-value', 'tone-green')}>
+              {formatUsd(targetPrice)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles['panel-secondary']}>
+        <div className={styles['contract-preview']}>
+          <div className={styles['contract-header']}>
+            <span className={styles['contract-title']}>Execution Preview</span>
+            <span className={styles['contract-status']}>{contractStatus}</span>
+          </div>
+          <div className={styles['contract-body']}>
+            <div className={styles['contract-code']}>
+              executeTrade("{activeSignal.symbol}", "{actionLabel}", {Math.round(safeAmount || 0)}, {Math.round(entryPrice || 0)})
+            </div>
+            <div className={styles['contract-effects']}>
+              <div className={styles['effect-item']}>Reserve {formatTokenAmount(safeAmount)} {tokenSymbol}</div>
+              <div className={styles['effect-item']}>Run signal and validation checks</div>
+              <div className={styles['effect-item']}>Create execution record</div>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles['execution-steps']}>
+          <div className={styles['steps-header']}>
+            <span className={styles['contract-title']}>Execute Trade</span>
+            <span className={styles['contract-status']}>{stepsStatus}</span>
+          </div>
+          <div className={styles['steps-body']}>
+            <div className={classes('check-item', wallet.isConnected ? 'ok' : 'warn')}>
+              <span>Wallet access</span>
+              <span className={styles['check-value']}>{wallet.isConnected ? shortenAddress(wallet.account) : 'Connect wallet'}</span>
+            </div>
+            <div className={classes('check-item', wallet.isWrongNetwork ? 'warn' : 'ok')}>
+              <span>Network</span>
+              <span className={styles['check-value']}>{previewNetwork?.chainName || 'Polygon Amoy'} {chainId || 80002}</span>
+            </div>
+            <div className={classes('check-item', availableBalance >= safeAmount && safeAmount >= 1 ? 'ok' : 'warn')}>
+              <span>Funds check</span>
+              <span className={styles['check-value']}>
+                {formatTokenAmount(availableBalance)} ≥ {formatTokenAmount(safeAmount || 0)}
+              </span>
+            </div>
+            <div className={classes('check-item', safeAmount >= 1 ? 'ok' : 'warn')}>
+              <span>Allocation</span>
+              <span className={styles['check-value']}>{formatTokenAmount(safeAmount || 0)} {tokenSymbol}</span>
+            </div>
+
+            <div className={styles['steps-grid']}>
+              <div className={classes('step-item', 'active')}>
+                <span className={styles['step-number']}>1</span>
+                <span className={styles['step-label']}>Pre-check</span>
+              </div>
+              <div className={classes('step-item', (executionState === 'submitting' || executionState === 'success') && 'active')}>
+                <span className={styles['step-number']}>2</span>
+                <span className={styles['step-label']}>Approve</span>
+              </div>
+              <div className={classes('step-item', executionState === 'success' && 'active')}>
+                <span className={styles['step-number']}>3</span>
+                <span className={styles['step-label']}>Confirmed</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1499,14 +1379,14 @@ function FooterTabs({
               <div key={item.tradeId || `${item.symbol}-${item.timestamp}`} className={styles['table-row']}>
                 <span>{formatShortTime(item.timestamp)}</span>
                 <span>{item.symbol}</span>
-                <span style={{ color: item.type === 'SELL' ? 'var(--red)' : 'var(--green)' }}>{item.type}</span>
+                <span className={styles[getActionToneClass(item.type)]}>{item.type}</span>
                 <span>{formatTokenAmount(item.amount)}</span>
                 <span>{formatUsd(item.price)}</span>
-                <span style={{ color: Number(item.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                <span className={styles[getSignedToneClass(item.pnl)]}>
                   {formatSignedPercent(item.pnl || 0, 1)}
                 </span>
-                <span style={{ color: Number(item.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>{item.status}</span>
-                <span style={{ color: 'var(--purple)' }}>
+                <span className={styles[getSignedToneClass(item.pnl)]}>{item.status}</span>
+                <span className={styles['tone-purple']}>
                   {shortenAddress(item.txHash || item.recordHash || item.tradeId || 'pending')}
                 </span>
               </div>
@@ -1519,7 +1399,7 @@ function FooterTabs({
 
       {activeTab === 'positions' && (
         <div className={styles['footer-section']}>
-          <div className={classes('table-row', 'header')} style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+          <div className={classes('table-row', 'header', 'table-row-seven')}>
             <span>Asset</span>
             <span>Type</span>
             <span>Entry</span>
@@ -1533,18 +1413,17 @@ function FooterTabs({
             positions.map((item) => (
               <div
                 key={item.id}
-                className={styles['table-row']}
-                style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
+                className={classes('table-row', 'table-row-seven')}
               >
                 <span>{item.symbol}</span>
-                <span style={{ color: item.type === 'SELL' ? 'var(--red)' : 'var(--green)' }}>{item.type}</span>
+                <span className={styles[getActionToneClass(item.type)]}>{item.type}</span>
                 <span>{formatUsd(item.price)}</span>
                 <span>{formatUsd(item.currentPrice || item.price)}</span>
                 <span>{formatTokenAmount(item.amount)}</span>
-                <span style={{ color: Number(item.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                <span className={styles[getSignedToneClass(item.pnl)]}>
                   {formatSignedPercent(item.pnl || 0, 1)}
                 </span>
-                <span style={{ color: 'var(--cyan)' }}>Monitor</span>
+                <span className={styles['tone-cyan']}>Monitor</span>
               </div>
             ))
           ) : (
@@ -1555,7 +1434,7 @@ function FooterTabs({
 
       {activeTab === 'orders' && (
         <div className={styles['footer-section']}>
-          <div className={classes('table-row', 'header')} style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+          <div className={classes('table-row', 'header', 'table-row-seven')}>
             <span>Time</span>
             <span>Asset</span>
             <span>Type</span>
@@ -1569,16 +1448,15 @@ function FooterTabs({
             orders.map((item) => (
               <div
                 key={item.id}
-                className={styles['table-row']}
-                style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
+                className={classes('table-row', 'table-row-seven')}
               >
                 <span>{formatShortTime(item.timestamp)}</span>
                 <span>{item.symbol}</span>
-                <span style={{ color: item.type === 'SELL' ? 'var(--red)' : 'var(--green)' }}>{item.type}</span>
+                <span className={styles[getActionToneClass(item.type)]}>{item.type}</span>
                 <span>{formatTokenAmount(item.amount)}</span>
                 <span>{formatUsd(item.price)}</span>
-                <span style={{ color: 'var(--yellow)' }}>{item.status}</span>
-                <span style={{ color: 'var(--yellow)' }}>Pending</span>
+                <span className={styles['tone-yellow']}>{item.status}</span>
+                <span className={styles['tone-yellow']}>Pending</span>
               </div>
             ))
           ) : (
@@ -1590,6 +1468,8 @@ function FooterTabs({
   );
 }
 
+// The live workspace ships from this React surface.
+// `ai-power-trade-workspace-v2.html` remains a static design reference only.
 export default function AiPowerTradeFinalWorkspace() {
   const router = useRouter();
   const wallet = useWallet();
@@ -1634,17 +1514,20 @@ export default function AiPowerTradeFinalWorkspace() {
       : terminalData?.blockchain?.token || wallet.tokenMeta;
   const hasLiveBalance =
     typeof wallet.tokenBalance === 'number' && Number.isFinite(wallet.tokenBalance);
-  const availableBalance = hasLiveBalance ? wallet.tokenBalance : DEFAULT_PREVIEW_BALANCE;
+  const balanceCap = hasLiveBalance ? wallet.tokenBalance : wallet.isConnected ? null : DEFAULT_PREVIEW_BALANCE;
+  const availableBalance = balanceCap ?? 0;
   const nativeSymbol = previewNetwork?.nativeCurrency?.symbol || 'MATIC';
   const tokenSymbol = previewToken?.symbol || 'atUSDT';
   const chainId = parseChainIdValue(wallet.chainId || previewNetwork?.chainId);
   const amountValue = Number(amountInput);
-  const safeAmount = Number.isFinite(amountValue) ? clamp(amountValue, 0, availableBalance) : 0;
-  const amountPercent = availableBalance > 0 ? (safeAmount / availableBalance) * 100 : 0;
+  const safeAmount = Number.isFinite(amountValue)
+    ? clamp(amountValue, 0, balanceCap == null ? Math.max(amountValue, 0) : balanceCap)
+    : 0;
+  const amountPercent = balanceCap && balanceCap > 0 ? (safeAmount / balanceCap) * 100 : 0;
   const marketOverview = terminalData?.marketOverview || {};
-  const performance = terminalData?.performance || {};
   const remoteHistory = Array.isArray(terminalData?.history) && terminalData.history.length ? terminalData.history : DEMO_HISTORY;
   const readiness = terminalData?.readiness || {};
+  const research = terminalData?.research?.[activeSymbol] || null;
   const sodexStatus = terminalData?.sodex || null;
   const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
   const mergedHistory = [...localHistory, ...remoteHistory].slice(0, 8);
@@ -1841,15 +1724,6 @@ export default function AiPowerTradeFinalWorkspace() {
       return;
     }
 
-    if (hasLiveBalance && safeAmount > availableBalance) {
-      setExecutionState('idle');
-      setFeedback({
-        tone: 'error',
-        message: `Amount exceeds available ${tokenSymbol} balance.`,
-      });
-      return;
-    }
-
     const ready = liveSodexReady
       ? await wallet.ensureWalletConnected()
       : await wallet.ensureWalletReady();
@@ -1873,6 +1747,27 @@ export default function AiPowerTradeFinalWorkspace() {
       setFeedback({
         tone: 'error',
         message: 'Connect a wallet before submitting the trade.',
+      });
+      return;
+    }
+
+    const refreshedBalancePayload = await wallet.refreshBalance(walletAddress);
+    const refreshedBalance = Number(refreshedBalancePayload?.balance);
+
+    if (!Number.isFinite(refreshedBalance)) {
+      setExecutionState('idle');
+      setFeedback({
+        tone: 'error',
+        message: `Live ${tokenSymbol} balance is still unavailable. Reconnect the wallet or try again in a moment.`,
+      });
+      return;
+    }
+
+    if (safeAmount > refreshedBalance) {
+      setExecutionState('idle');
+      setFeedback({
+        tone: 'error',
+        message: `Amount exceeds available ${tokenSymbol} balance.`,
       });
       return;
     }
@@ -2112,7 +2007,6 @@ export default function AiPowerTradeFinalWorkspace() {
             stopPrice={stopPrice}
             actionLabel={actionLabel}
             confidencePercent={confidencePercent}
-            performance={performance}
             marketOverview={marketOverview}
             readiness={readiness}
             change24h={change24h}
@@ -2120,6 +2014,8 @@ export default function AiPowerTradeFinalWorkspace() {
             handleAutoFill={handleAutoFill}
             previewNetwork={previewNetwork}
             nativeSymbol={nativeSymbol}
+            research={research}
+            researchLoading={terminalLoading && !research}
           />
 
           <RightExecutionPanel

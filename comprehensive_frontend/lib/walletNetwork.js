@@ -12,12 +12,15 @@ export const DEFAULT_CHAIN_CONFIGS = {
   },
 };
 
+export const DEFAULT_TOKEN_CONTRACT_ADDRESS = '0xA2E0F4A542b700f437c27Ce28B31499023d9a53A';
+export const DEFAULT_TOKEN_EXPLORER_URL = `https://amoy.polygonscan.com/address/${DEFAULT_TOKEN_CONTRACT_ADDRESS}`;
+
 export const FALLBACK_TOKEN = {
   name: 'AI Trade USDT',
   symbol: 'atUSDT',
   decimals: 18,
-  contractAddress: null,
-  explorerUrl: null,
+  contractAddress: DEFAULT_TOKEN_CONTRACT_ADDRESS,
+  explorerUrl: DEFAULT_TOKEN_EXPLORER_URL,
 };
 
 export function parseChainIdValue(value) {

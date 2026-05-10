@@ -16,13 +16,19 @@ export function useMarketPulse() {
 
     const fetchPrices = async () => {
       try {
+        console.log('[useMarketPulse] Fetching prices...');
+
         const cached = cache.get(CACHE_KEY);
 
         if (cached && mounted) {
+          console.log('[useMarketPulse] Using cached data:', {
+            symbols: Object.keys(cached),
+            btcPrice: cached['BTC']?.price
+          });
           setSignals(mergeSignalsWithLivePrices(aiSignals, cached));
           setSource('Live market overlay');
           setLoading(false);
-          return;
+          // Don't return - continue to fetch fresh data in background
         }
 
         const response = await fetch('/api/market/prices');
@@ -34,6 +40,13 @@ export function useMarketPulse() {
         const payload = await response.json();
         const liveData = payload?.data || {};
 
+        console.log('[useMarketPulse] Fresh data received:', {
+          symbols: Object.keys(liveData),
+          btcPrice: liveData['BTC']?.price,
+          source: payload?.source,
+          mergedSignals: mergeSignalsWithLivePrices(aiSignals, liveData).map(s => ({ symbol: s.symbol, price: s.price }))
+        });
+
         cache.set(CACHE_KEY, liveData, 45);
 
         if (mounted) {
@@ -41,6 +54,7 @@ export function useMarketPulse() {
           setSource(payload?.source === 'cache' ? 'Cached market overlay' : 'Live market overlay');
         }
       } catch (error) {
+        console.error('[useMarketPulse] Error:', error);
         if (mounted) {
           setSignals(aiSignals);
           setSource('Curated AI model');

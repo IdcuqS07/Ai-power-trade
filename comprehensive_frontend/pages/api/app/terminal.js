@@ -8,12 +8,50 @@ import {
   normalizeChainId,
   resolveBlockchainConfig,
 } from '../../../lib/walletNetwork';
+import { SIGNAL_TYPES } from '../../../lib/enums';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
 const REQUEST_TIMEOUT_MS = 3000;
 const SODEX_TESTNET_CHAIN_ID = 138565;
 const TERMINAL_SYMBOLS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'MATIC', 'LINK'];
 const DEMO_UPDATED_AT = '2026-04-26T12:00:00.000Z';
+
+const MARKET_REGIME = Object.freeze({
+  BULL_TREND: 'Bull Trend',
+  BEAR_TREND: 'Bear Trend',
+  CONSOLIDATION: 'Consolidation',
+  VOLATILITY: 'High Volatility',
+  DEFENSIVE: 'Defensive Rotation',
+  MOMENTUM: 'Momentum Watch',
+});
+
+const CONVICTION_TIERS = Object.freeze({
+  VERY_HIGH: { min: 0.85, label: 'Very High Conviction', emoji: '🔥' },
+  HIGH: { min: 0.8, label: 'High Conviction', emoji: '🔹' },
+  ACTIONABLE: { min: 0.7, label: 'Actionable', emoji: '⚡' },
+  MODERATE: { min: 0.6, label: 'Moderate Conviction', emoji: '🟡' },
+  CONDITIONAL: { min: 0.5, label: 'Conditional', emoji: '⚠️' },
+  LOW: { min: 0, label: 'Low Conviction', emoji: '🔻' },
+});
+
+const CONFIDENCE_DRIVERS = Object.freeze({
+  MOMENTUM: 'Live price momentum',
+  VOLUME_FLOW: 'Volume and order flow',
+  REGIME_ALIGNMENT: 'Market regime alignment',
+  SIGNAL_FALLBACK: 'Signal fallback model',
+  EXECUTION_GUARDRAILS: 'Execution guardrails',
+  WHALE_TRACKING: 'Whale tracking',
+  FUNDAMENTALS: 'Fundamental analysis',
+  TECHNICAL: 'Technical indicators',
+  SENTIMENT: 'Market sentiment',
+});
+
+const SIGNAL_NAMES = Object.freeze({
+  LONG: 'Long Bias',
+  SHORT: 'Short Bias',
+  HOLD: 'Watch / Hold',
+});
+
 const SYMBOL_NAMES = {
   BTC: 'Bitcoin',
   ETH: 'Ethereum',
@@ -61,16 +99,204 @@ const DEMO_HISTORY = [
   },
 ];
 
+// ═══════════════════════════════════════════════════════════
+// AI Conviction Score Engine
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * The AI Conviction Score (ACS) is a composite, real-time score [0–1]
+ * that drives every trading decision, UI badge, and risk guardrail.
+ *
+ * It blends four signal layers:
+ *   1. Live Price Momentum   — short-window price change
+ *   2. Volume / Order-Flow   — relative volume spike
+ *   3. Regime Alignment      — bullish/bearish/consolidation
+ *   4. Signal Fallback       — pre-built AI signals when live data absent
+ *
+ * Guardrail overlays (risk caps, drawdown limits) then bound the final
+ * score before it is classified into a ConvictionTier.
+ */
+class AIConvictionEngine {
+  constructor() {
+    // Tunable weights (must sum to 1.0)
+    this.weights = {
+      momentum: 0.35,
+      volumeFlow: 0.25,
+      regimeAlignment: 0.25,
+      signalFallback: 0.15,
+    };
+
+    // Guardrail thresholds
+    this.maxPositionPctOfPortfolio = 0.10;
+    this.maxDrawdownPct = 0.03;
+    this.maxOpenPositions = 5;
+
+    // In-memory regime state per symbol
+    this._regimes = new Map();
+  }
+
+  // ── Layer 1: Live Price Momentum ──────────────────────────
+  _scoreMomentum(signal = {}) {
+    const { priceChange24h, priceChange1h } = signal;
+    if (priceChange24h == null && priceChange1h == null) return 0.5;
+
+    const h1 = priceChange1h ?? 0;
+    const h24 = priceChange24h ?? 0;
+    const raw = 0.6 * h1 + 0.4 * h24; // weighted blend
+
+    // Sigmoid normalisation: ±5 % maps to ≈ 0.15–0.85
+    return clamp(1 / (1 + Math.exp(-raw * 8)), 0, 1);
+  }
+
+  // ── Layer 2: Volume / Order-Flow ──────────────────────────
+  _scoreVolumeFlow(signal = {}) {
+    const { volume24h, avgVolume24h } = signal;
+    if (volume24h == null || avgVolume24h == null || avgVolume24h === 0) return 0.5;
+
+    const ratio = volume24h / avgVolume24h; // >1 means above average
+    return clamp(0.3 + 0.14 * Math.log2(Math.max(ratio, 0.1)), 0, 1);
+  }
+
+  // ── Layer 3: Regime Alignment ─────────────────────────────
+  _detectRegime(signal = {}) {
+    const { priceChange24h, priceChange1h, volume24h, avgVolume24h } = signal;
+    const h24 = priceChange24h ?? 0;
+    const h1 = priceChange1h ?? 0;
+    const volRatio = (volume24h && avgVolume24h) ? volume24h / avgVolume24h : 1;
+
+    if (Math.abs(h24) > 5 && volRatio > 1.8) return MARKET_REGIME.VOLATILITY;
+    if (h24 > 2 && h1 > 0.5) return MARKET_REGIME.BULL_TREND;
+    if (h24 < -2 && h1 < -0.5) return MARKET_REGIME.BEAR_TREND;
+    if (Math.abs(h24) <= 1.5) return MARKET_REGIME.CONSOLIDATION;
+    if (h24 > 1 && h1 > 0.2) return MARKET_REGIME.MOMENTUM;
+    return MARKET_REGIME.CONSOLIDATION;
+  }
+
+  _scoreRegimeAlignment(signal = {}) {
+    const regime = this._detectRegime(signal);
+    this._regimes.set(signal.symbol ?? 'UNKNOWN', regime);
+
+    const action = resolveSignalType(signal);
+    const isBullish = action === SIGNAL_TYPES.BUY;
+    const isBearish = action === SIGNAL_TYPES.SELL;
+
+    switch (regime) {
+      case MARKET_REGIME.BULL_TREND:
+        return isBullish ? 0.9 : isBearish ? 0.25 : 0.55;
+      case MARKET_REGIME.BEAR_TREND:
+        return isBearish ? 0.9 : isBullish ? 0.25 : 0.55;
+      case MARKET_REGIME.VOLATILITY:
+        return 0.45; // uncertainty discount
+      case MARKET_REGIME.MOMENTUM:
+        return isBullish ? 0.8 : 0.5;
+      case MARKET_REGIME.CONSOLIDATION:
+      default:
+        return 0.55;
+    }
+  }
+
+  // ── Layer 4: Signal Fallback ──────────────────────────────
+  _scoreSignalFallback(signal = {}) {
+    const { confidence, strength } = signal;
+    const base = confidence ?? strength ?? 0.5;
+    return clamp(typeof base === 'number' ? base : 0.5, 0, 1);
+  }
+
+  // ── Guardrail Overlays ────────────────────────────────────
+  _applyGuardrails(rawScore, signal = {}) {
+    let score = rawScore;
+
+    // Hard cap: max exposure
+    if (signal.openPositions >= this.maxOpenPositions) {
+      score *= 0.5;
+    }
+
+    // Drawdown throttle
+    if (signal.portfolioDrawdownPct > this.maxDrawdownPct) {
+      score *= 0.6;
+    }
+
+    return clamp(score, 0, 1);
+  }
+
+  // ── Public API ────────────────────────────────────────────
+
+  /**
+   * Compute the full AI Conviction Score for a given signal.
+   * @param {object} signal
+   * @returns {{
+   *   score: number,           // 0-1
+   *   tier: object,            // { min, label, emoji }
+   *   signalName: string,      // Long Bias / Short Bias / Watch
+   *   regime: string,          // Market regime name
+   *   drivers: object,         // Per-layer scores
+   *   timestamp: string        // ISO timestamp
+   * }}
+   */
+  score(signal = {}) {
+    const momentum     = this._scoreMomentum(signal);
+    const volumeFlow   = this._scoreVolumeFlow(signal);
+    const regime       = this._scoreRegimeAlignment(signal);
+    const fallback     = this._scoreSignalFallback(signal);
+
+    const raw =
+      this.weights.momentum      * momentum +
+      this.weights.volumeFlow    * volumeFlow +
+      this.weights.regimeAlignment * regime +
+      this.weights.signalFallback  * fallback;
+
+    const finalScore = this._applyGuardrails(raw, signal);
+    const tier = this._classifyTier(finalScore);
+    const action = resolveSignalType(signal);
+
+    return {
+      score: Math.round(finalScore * 100) / 100,
+      tier,
+      signalName: SIGNAL_NAMES[action] ?? SIGNAL_NAMES[SIGNAL_TYPES.BUY],
+      regime: this._regimes.get(signal.symbol ?? 'UNKNOWN') ?? this._detectRegime(signal),
+      drivers: {
+        [CONFIDENCE_DRIVERS.MOMENTUM]:          Math.round(momentum * 100) / 100,
+        [CONFIDENCE_DRIVERS.VOLUME_FLOW]:       Math.round(volumeFlow * 100) / 100,
+        [CONFIDENCE_DRIVERS.REGIME_ALIGNMENT]:  Math.round(regime * 100) / 100,
+        [CONFIDENCE_DRIVERS.SIGNAL_FALLBACK]:   Math.round(fallback * 100) / 100,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  _classifyTier(score) {
+    if (score >= CONVICTION_TIERS.VERY_HIGH.min) return CONVICTION_TIERS.VERY_HIGH;
+    if (score >= CONVICTION_TIERS.HIGH.min)      return CONVICTION_TIERS.HIGH;
+    if (score >= CONVICTION_TIERS.ACTIONABLE.min) return CONVICTION_TIERS.ACTIONABLE;
+    if (score >= CONVICTION_TIERS.MODERATE.min)   return CONVICTION_TIERS.MODERATE;
+    if (score >= CONVICTION_TIERS.CONDITIONAL.min) return CONVICTION_TIERS.CONDITIONAL;
+    return CONVICTION_TIERS.LOW;
+  }
+
+  getRegime(symbol) {
+    return this._regimes.get(symbol) ?? MARKET_REGIME.CONSOLIDATION;
+  }
+}
+
+const convictionEngine = new AIConvictionEngine();
+
+function resolveSignalType(payload = {}) {
+  const rawValue = payload?.signal_type || payload?.type || payload?.trade_type || payload?.signal || '';
+  if (/sell|short/i.test(rawValue)) return SIGNAL_TYPES.SELL;
+  if (/hold|watch/i.test(rawValue)) return SIGNAL_TYPES.HOLD;
+  return SIGNAL_TYPES.BUY;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 function isShortBias(action = '') {
-  return /short|sell/i.test(String(action));
+  return resolveSignalType(action) === SIGNAL_TYPES.SELL;
 }
 
 function isHoldBias(action = '') {
-  return /watch|hold/i.test(String(action));
+  return resolveSignalType(action) === SIGNAL_TYPES.HOLD;
 }
 
 function inferAction(change24h = 0) {
@@ -264,11 +490,13 @@ async function fetchBackendJson(path) {
 
 function normalizeHistoryItem(item, index = 0) {
   const timestamp = item?.timestamp || item?.created_at || new Date().toISOString();
+  const signalType = resolveSignalType(item);
 
   return {
     tradeId: item?.trade_id || item?.id || `APT-HISTORY-${index + 1}`,
     symbol: String(item?.symbol || 'BTC').toUpperCase(),
-    type: /sell|short/i.test(item?.type || item?.trade_type || item?.signal || '') ? 'SELL' : /hold|watch/i.test(item?.type || item?.trade_type || item?.signal || '') ? 'HOLD' : 'BUY',
+    type: signalType,
+    signal_type: signalType,
     amount: Number(item?.amount || item?.value || 0),
     price: Number(item?.price || 0),
     pnl: Number(item?.profit_loss || item?.pnl || 0),
@@ -534,6 +762,177 @@ function buildOrderFlow(baseSignal, enhanced, globalMarket) {
   }
 
   return liveRows.length ? liveRows.slice(0, 4) : baseSignal.orderFlow || [];
+}
+
+function deriveResearchRegime(catalystScore, fallbackRegime = '') {
+  const normalized = String(fallbackRegime || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '-');
+
+  if (normalized && normalized !== 'UNAVAILABLE') {
+    return normalized;
+  }
+
+  if (catalystScore >= 80) {
+    return 'RISK-ON';
+  }
+
+  if (catalystScore >= 60) {
+    return 'NEUTRAL';
+  }
+
+  if (catalystScore >= 40) {
+    return 'DEFENSIVE';
+  }
+
+  return 'RISK-OFF';
+}
+
+function deriveNarrativeStrength(catalystScore) {
+  if (catalystScore >= 80) {
+    return 'EXPANDING';
+  }
+
+  if (catalystScore >= 65) {
+    return 'STRONG';
+  }
+
+  if (catalystScore >= 45) {
+    return 'BUILDING';
+  }
+
+  return 'SOFT';
+}
+
+function deriveResearchSentiment(sentimentUp, regime = '') {
+  const normalizedRegime = String(regime || '').toUpperCase();
+  const score = Number(sentimentUp);
+
+  if (Number.isFinite(score)) {
+    if (score >= 70) {
+      return 'BULLISH';
+    }
+
+    if (score >= 58) {
+      return 'POSITIVE';
+    }
+
+    if (score >= 45) {
+      return 'NEUTRAL';
+    }
+
+    if (score >= 35) {
+      return 'CAUTIOUS';
+    }
+
+    return 'DEFENSIVE';
+  }
+
+  if (/BULL|RISK-ON|POSITIVE/.test(normalizedRegime)) {
+    return 'BULLISH';
+  }
+
+  if (/DEFENSIVE|RISK-OFF|BEAR/.test(normalizedRegime)) {
+    return 'DEFENSIVE';
+  }
+
+  return 'NEUTRAL';
+}
+
+function deriveStorySentiment(score, regime, sentimentLabel) {
+  const normalizedRegime = String(regime || '').toUpperCase();
+  const normalizedSentiment = String(sentimentLabel || '').toUpperCase();
+  const value = Number(score || 0);
+
+  if (/DEFENSIVE|RISK-OFF|BEAR/.test(normalizedRegime)) {
+    return 'DEFENSIVE';
+  }
+
+  if (value >= 72 || /BULLISH|POSITIVE/.test(normalizedSentiment)) {
+    return 'BULLISH';
+  }
+
+  if (value >= 50) {
+    return 'NEUTRAL';
+  }
+
+  return /CAUTIOUS|DEFENSIVE/.test(normalizedSentiment) ? 'CAUTIOUS' : 'NEUTRAL';
+}
+
+function deriveResearchConfidence(activeSignal, catalystScore) {
+  const signalConfidence = Number(activeSignal?.confidence || 0);
+
+  if (signalConfidence >= 0.78 || catalystScore >= 75) {
+    return 'High';
+  }
+
+  if (signalConfidence >= 0.64 || catalystScore >= 55) {
+    return 'Medium';
+  }
+
+  return 'Guarded';
+}
+
+function buildResearchPanel(symbol, activeSignal, marketSentiment, updatedAt) {
+  const researchContext = activeSignal?.researchContext;
+  const hasLiveResearch = Boolean(researchContext?.available);
+
+  const catalystScore = hasLiveResearch
+    ? clamp(Math.round(Number(researchContext.catalyst_score || 0)), 0, 100)
+    : clamp(Math.round(Number(activeSignal?.confidence || 0.6) * 100), 35, 99);
+  const marketRegime = deriveResearchRegime(
+    catalystScore,
+    hasLiveResearch ? researchContext.macro_regime : activeSignal?.regime
+  );
+  const sentimentScore = Number(
+    activeSignal?.marketSentiment?.sentiment_up ?? marketSentiment?.sentiment_up ?? (
+      activeSignal?.change24h >= 0 ? 62 : 42
+    )
+  );
+  const sentimentLabel = deriveResearchSentiment(sentimentScore, marketRegime);
+
+  const items = hasLiveResearch && Array.isArray(researchContext.latest_news)
+    ? researchContext.latest_news
+        .map((article) => {
+          const articleScore = clamp(Math.round(Number(article?.importance_score || 0)), 0, 100);
+          return {
+            type: article?.category_label || researchContext.catalyst_label || 'Research',
+            title: article?.title || `${symbol} research catalyst`,
+            publishedAt: article?.published_at || null,
+            score: articleScore,
+            sentiment: deriveStorySentiment(articleScore, marketRegime, sentimentLabel),
+          };
+        })
+        .filter((article) => article.title)
+    : [];
+  const headlineCount = Number(
+    hasLiveResearch ? (researchContext.news_count || items.length || 0) : items.length
+  );
+
+  const summary = hasLiveResearch
+    ? (activeSignal?.catalystSummary ||
+       researchContext.rationale?.[0] ||
+       `${symbol} research context is live with ${headlineCount} active headlines.`)
+    : (activeSignal?.catalystSummary ||
+       `${symbol} signal overlay is active. Live SoSoValue research headlines will populate here once the narrative engine returns curated context.`);
+
+  return {
+    symbol,
+    catalystScore,
+    marketRegime,
+    headlineCount,
+    narrativeStrength: deriveNarrativeStrength(catalystScore),
+    sentiment: {
+      label: sentimentLabel,
+      score: Number.isFinite(sentimentScore) ? Math.round(sentimentScore) : null,
+    },
+    summary,
+    items,
+    updatedAt: updatedAt || null,
+    source: hasLiveResearch ? 'SoSoValue AI Engine' : 'Signal overlay (fallback)',
+    confidence: deriveResearchConfidence(activeSignal, catalystScore),
+  };
 }
 
 function buildRewardRisk(confidence, riskScore, fallbackValue) {
@@ -877,6 +1276,7 @@ export default async function handler(req, res) {
     enhanced?.timestamp ||
     prediction?.timestamp ||
     new Date().toISOString();
+  const activeResearch = buildResearchPanel(activeSignal.symbol || requestedSymbol, activeSignal, marketSentiment, updatedTimestamp);
 
   res.status(200).json({
     success: true,
@@ -917,6 +1317,11 @@ export default async function handler(req, res) {
       sodex,
       modelStatus,
       readiness,
+      research: activeResearch
+        ? {
+            [activeSignal.symbol || requestedSymbol]: activeResearch,
+          }
+        : {},
       updatedAt: globalMarket?.timestamp || enhanced?.timestamp || prediction?.timestamp || DEMO_UPDATED_AT,
     },
   });

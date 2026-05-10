@@ -248,7 +248,7 @@ def initialize_price_history():
             # Fallback to simulated only if Binance fails
             trading_state["price_history"][symbol] = _generate_simulated_history(symbol)
             logger.warning(f"⚠ Using simulated data for {symbol}")
-    
+
 def _generate_simulated_history(symbol: str) -> List[float]:
     """Generate simulated price history"""
     base_prices = {"BTC": 50000, "ETH": 3000, "BNB": 300, "SOL": 100}
@@ -383,14 +383,14 @@ from ml_predictor import ml_predictor
 class AIPredictor:
     def __init__(self):
         self.model_version = "v3.0-comprehensive"
-    
+
     def calculate_indicators(self, prices: List[float]) -> Dict:
         """Calculate technical indicators"""
         if len(prices) < 20:
             return {}
-        
+
         prices_arr = np.array(prices)
-        
+
         # RSI
         deltas = np.diff(prices_arr[-14:])
         gains = np.where(deltas > 0, deltas, 0)
@@ -399,25 +399,25 @@ class AIPredictor:
         avg_loss = np.mean(losses) if len(losses) > 0 else 0
         rs = avg_gain / avg_loss if avg_loss != 0 else 0
         rsi = 100 - (100 / (1 + rs))
-        
+
         # Moving Averages
         ma_5 = np.mean(prices_arr[-5:])
         ma_20 = np.mean(prices_arr[-20:])
-        
+
         # MACD
         ema_12 = self._ema(prices_arr, 12)
         ema_26 = self._ema(prices_arr, 26)
         macd = ema_12 - ema_26
-        
+
         # Bollinger Bands
         sma_20 = np.mean(prices_arr[-20:])
         std_20 = np.std(prices_arr[-20:])
         bb_upper = sma_20 + (2 * std_20)
         bb_lower = sma_20 - (2 * std_20)
-        
+
         # Volatility
         volatility = std_20 / sma_20 if sma_20 != 0 else 0
-        
+
         return {
             "rsi": rsi,
             "ma_5": ma_5,
@@ -428,50 +428,50 @@ class AIPredictor:
             "volatility": volatility,
             "current_price": prices_arr[-1]
         }
-    
+
     def _ema(self, prices, period):
         alpha = 2 / (period + 1)
         ema = prices[0]
         for price in prices[1:]:
             ema = alpha * price + (1 - alpha) * ema
         return ema
-    
+
     def generate_signal(self, symbol: str) -> Dict:
         """Generate AI trading signal"""
         prices = trading_state["price_history"][symbol]
         indicators = self.calculate_indicators(prices)
-        
+
         if not indicators:
             return self._default_signal()
-        
+
         # Calculate signal scores
         buy_score = 0
         sell_score = 0
-        
+
         # RSI analysis
         if indicators["rsi"] < 30:
             buy_score += 2
         elif indicators["rsi"] > 70:
             sell_score += 2
-        
+
         # MACD analysis
         if indicators["macd"] > 0:
             buy_score += 1.5
         else:
             sell_score += 1.5
-        
+
         # MA crossover
         if indicators["ma_5"] > indicators["ma_20"]:
             buy_score += 1
         else:
             sell_score += 1
-        
+
         # Bollinger Bands
         if indicators["current_price"] <= indicators["bb_lower"]:
             buy_score += 1.5
         elif indicators["current_price"] >= indicators["bb_upper"]:
             sell_score += 1.5
-        
+
         # Determine signal
         total_score = buy_score + sell_score
         if total_score == 0:
@@ -483,18 +483,18 @@ class AIPredictor:
         else:
             signal = "SELL"
             confidence = min(0.95, 0.5 + (sell_score / (total_score * 2)))
-        
+
         # Risk score
         risk_score = int(50 + (indicators["volatility"] * 200))
         risk_score = max(0, min(100, risk_score))
-        
+
         # Position size
         position_size = confidence * 15 * (1 - risk_score / 200)
         position_size = max(1, min(20, position_size))
-        
+
         # Get ML prediction if available
         ml_prediction = ml_predictor.predict(indicators)
-        
+
         result = {
             "signal": signal,
             "confidence": round(confidence, 3),
@@ -505,16 +505,16 @@ class AIPredictor:
             "indicators": indicators,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         # Add ML prediction if available
         if ml_prediction:
             result["ml_prediction"] = ml_prediction
             # Combine rule-based and ML confidence
             combined_confidence = (confidence + ml_prediction["ml_confidence"]) / 2
             result["combined_confidence"] = round(combined_confidence, 3)
-        
+
         return result
-    
+
     def _default_signal(self):
         return {
             "signal": "HOLD",
@@ -540,12 +540,12 @@ class SmartContract:
         self.on_chain_records = []
         self.validations = []
         self.settlements = []
-    
+
     def validate_trade(self, signal: Dict, portfolio: Dict) -> Dict:
         """Validate trade against smart contract rules"""
         validations = []
         is_valid = True
-        
+
         # Confidence check
         if signal["confidence"] < self.risk_limits["min_confidence"]:
             validations.append({
@@ -556,7 +556,7 @@ class SmartContract:
             is_valid = False
         else:
             validations.append({"rule": "min_confidence", "passed": True, "message": "OK"})
-        
+
         # Position size check
         if signal["position_size"] > self.risk_limits["max_position_size_pct"]:
             validations.append({
@@ -567,7 +567,7 @@ class SmartContract:
             is_valid = False
         else:
             validations.append({"rule": "max_position_size", "passed": True, "message": "OK"})
-        
+
         # Daily loss check
         if portfolio["profit_loss_pct"] < -self.risk_limits["max_daily_loss_pct"]:
             validations.append({
@@ -578,7 +578,7 @@ class SmartContract:
             is_valid = False
         else:
             validations.append({"rule": "max_daily_loss", "passed": True, "message": "OK"})
-        
+
         # Daily trades check
         if trading_state["trades_today"] >= self.risk_limits["max_daily_trades"]:
             validations.append({
@@ -589,7 +589,7 @@ class SmartContract:
             is_valid = False
         else:
             validations.append({"rule": "max_daily_trades", "passed": True, "message": "OK"})
-        
+
         validation_record = {
             "validation_id": len(self.validations) + 1,
             "is_valid": is_valid,
@@ -597,10 +597,10 @@ class SmartContract:
             "timestamp": datetime.now().isoformat(),
             "block_hash": self._hash(f"validation_{len(self.validations)}")
         }
-        
+
         self.validations.append(validation_record)
         return validation_record
-    
+
     def record_trade(self, trade: Dict) -> Dict:
         """Record trade on blockchain"""
         record = {
@@ -611,10 +611,10 @@ class SmartContract:
             "previous_hash": self.on_chain_records[-1]["block_hash"] if self.on_chain_records else "0" * 64,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         self.on_chain_records.append(record)
         return record
-    
+
     def settle_trade(self, trade: Dict) -> Dict:
         """Settle trade and distribute P&L"""
         settlement = {
@@ -624,17 +624,17 @@ class SmartContract:
             "status": "SETTLED",
             "timestamp": datetime.now().isoformat()
         }
-        
+
         self.settlements.append(settlement)
         return settlement
-    
+
     def _hash(self, data: str) -> str:
         return hashlib.sha256(data.encode()).hexdigest()
-    
+
     def get_stats(self) -> Dict:
         total_validations = len(self.validations)
         passed = len([v for v in self.validations if v["is_valid"]])
-        
+
         return {
             "total_validations": total_validations,
             "passed_validations": passed,
@@ -648,26 +648,26 @@ class SmartContract:
 class OracleLayer:
     def __init__(self):
         self.verifications = []
-    
+
     def verify_signal(self, signal: Dict, market_data: Dict) -> Dict:
         """Verify signal integrity and market data"""
         # Hash signal data
         signal_hash = hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()
-        
+
         # Verify market data consistency
         is_verified = True
         reasons = []
-        
+
         # Check if confidence is reasonable
         if signal["confidence"] > 0.98:
             is_verified = False
             reasons.append("Confidence suspiciously high")
-        
+
         # Check if risk score matches volatility
         if signal["risk_score"] < 20 and signal["indicators"].get("volatility", 0) > 0.05:
             is_verified = False
             reasons.append("Risk score inconsistent with volatility")
-        
+
         verification = {
             "verification_id": len(self.verifications) + 1,
             "signal_hash": signal_hash,
@@ -675,14 +675,14 @@ class OracleLayer:
             "reasons": reasons if not is_verified else ["All checks passed"],
             "timestamp": datetime.now().isoformat()
         }
-        
+
         self.verifications.append(verification)
         return verification
-    
+
     def get_stats(self) -> Dict:
         total = len(self.verifications)
         verified = len([v for v in self.verifications if v["is_verified"]])
-        
+
         return {
             "total_verifications": total,
             "verified_count": verified,
@@ -693,22 +693,22 @@ class OracleLayer:
 class TradingEngine:
     def __init__(self):
         self.trades = []
-    
+
     def execute_trade(self, signal: Dict, symbol: str, current_price: float) -> Dict:
         """Execute trade based on signal"""
         if signal["signal"] == "HOLD":
             return {"success": False, "reason": "Signal is HOLD"}
-        
+
         # Calculate trade details
         trade_value = trading_state["balance"] * (signal["position_size"] / 100)
         quantity = trade_value / current_price
-        
+
         # Simulate execution with slippage
         execution_price = current_price * (1 + random.uniform(-0.001, 0.001))
-        
+
         # Simulate P&L
         profit_loss = random.uniform(-trade_value * 0.05, trade_value * 0.08)
-        
+
         trade = {
             "trade_id": f"TRD_{len(self.trades) + 1}",
             "symbol": symbol,
@@ -720,17 +720,17 @@ class TradingEngine:
             "confidence": signal["confidence"],
             "timestamp": datetime.now().isoformat()
         }
-        
+
         self.trades.append(trade)
-        
+
         # Update state
         trading_state["pnl"] += profit_loss
         trading_state["daily_pnl"] += profit_loss
         trading_state["trades_today"] += 1
         trading_state["positions"].append(trade)
-        
+
         return {"success": True, "trade": trade}
-    
+
     def get_performance(self) -> Dict:
         if not self.trades:
             return {
@@ -740,10 +740,10 @@ class TradingEngine:
                 "total_profit": 0,
                 "avg_profit": 0
             }
-        
+
         winning = [t for t in self.trades if t["profit_loss"] > 0]
         total_profit = sum(t["profit_loss"] for t in self.trades)
-        
+
         return {
             "total_trades": len(self.trades),
             "winning_trades": len(winning),
@@ -781,18 +781,18 @@ def get_cached_performance():
     """Get performance data with caching - optimized for speed"""
     import time
     current_time = time.time()
-    
+
     # Return cached data if still valid
     if performance_cache["data"] and (current_time - performance_cache["timestamp"]) < performance_cache["ttl"]:
         logger.debug("Using cached performance data")
         return performance_cache["data"]
-    
+
     # If cache expired but data exists, return stale data and update in background
     if performance_cache["data"]:
         logger.debug("Returning stale cache while updating")
         # TODO: Update in background thread
         return performance_cache["data"]
-    
+
     performance = trading_engine.get_performance()
     performance_cache["data"] = performance
     performance_cache["timestamp"] = current_time
@@ -829,10 +829,10 @@ async def get_api_status():
         binance_market_health = test_price is not None
     except:
         pass
-    
+
     # Test Binance trading connection
     binance_trading_health = binance_trading.is_configured
-    
+
     return {
         "success": True,
         "api_status": "operational",
@@ -938,24 +938,24 @@ async def get_ssi_overview(
 async def get_dashboard(symbol: str = "BTC"):
     """Get complete dashboard data with live prices and AI signal for specified symbol"""
     import time
-    
+
     # Check dashboard cache first
     current_time = time.time()
     cache_key = symbol
-    if (cache_key in dashboard_cache["data"] and 
+    if (cache_key in dashboard_cache["data"] and
         cache_key in dashboard_cache["timestamp"] and
         (current_time - dashboard_cache["timestamp"][cache_key]) < dashboard_cache["ttl"]):
         cached_data = dashboard_cache["data"][cache_key]
         cached_data["cache_hit"] = True
         return {"success": True, "data": cached_data, "source": "cache"}
-    
+
     # Get current prices (live or simulated)
     prices_response = await get_prices()
     prices = prices_response["data"]
-    
+
     # Get AI signal for requested symbol (default BTC)
     signal = ai_predictor.generate_signal(symbol)
-    
+
     # Portfolio
     portfolio = {
         "total_value": trading_state["balance"] + trading_state["pnl"],
@@ -964,16 +964,16 @@ async def get_dashboard(symbol: str = "BTC"):
         "positions_count": len(trading_state["positions"]),
         "balance": trading_state["balance"]
     }
-    
+
     # Performance - Use cached data from blockchain
     performance = get_cached_performance()
-    
+
     # Smart contract stats
     sc_stats = smart_contract.get_stats()
-    
+
     # Oracle stats
     oracle_stats = oracle.get_stats()
-    
+
     # Prepare response data
     response_data = {
         "prices": prices,
@@ -985,11 +985,11 @@ async def get_dashboard(symbol: str = "BTC"):
         "trades_today": trading_state["trades_today"],
         "cache_hit": False
     }
-    
+
     # Save to cache
     dashboard_cache["data"][cache_key] = response_data
     dashboard_cache["timestamp"][cache_key] = current_time
-    
+
     return {
         "success": True,
         "data": response_data,
@@ -1000,21 +1000,27 @@ async def get_dashboard(symbol: str = "BTC"):
 async def get_prices():
     """Get current market prices from Binance"""
     import time
-    
+
+    print(f"\n[Market Prices] Request received at {datetime.now()}")
+
     # Check cache first
     current_time = time.time()
     if prices_cache["data"] and (current_time - prices_cache["timestamp"]) < prices_cache["ttl"]:
+        print(f"[Market Prices] ✅ Returning cached data ({len(prices_cache['data'])} symbols)")
         return {"success": True, "data": prices_cache["data"], "source": "cache"}
-    
+
     # Trading Pairs - Top 8 coins (Best Balance)
     prices = {}
-    
+    live_count = 0
+    simulated_count = 0
+
     # Get live data from Binance
     for symbol in PRICE_SYMBOLS:
         pair = f"{symbol}/USDT"
         stats = binance_api.get_24h_stats(pair)
-        
+
         if stats:
+            live_count += 1
             # Update price history
             if symbol in trading_state["price_history"]:
                 history = trading_state["price_history"][symbol]
@@ -1022,7 +1028,7 @@ async def get_prices():
                 history.append(new_price)
                 if len(history) > 100:
                     history.pop(0)
-            
+
             prices[symbol] = {
                 "price": round(stats['price'], 2),
                 "change_24h": round(stats['change_24h'], 2),
@@ -1032,17 +1038,21 @@ async def get_prices():
                 "source": "Binance"
             }
         else:
+            simulated_count += 1
             # Fallback to simulated only if Binance fails
             prices[symbol] = _get_simulated_price(symbol)
-    
+            print(f"[Market Prices] ⚠️  {symbol}: Using simulated price ${prices[symbol]['price']:.2f}")
+
     # Update cache
     prices_cache["data"] = prices
     prices_cache["timestamp"] = current_time
-    
+
+    print(f"[Market Prices] ✅ Returning {live_count} live + {simulated_count} simulated prices")
+
     return {
-        "success": True, 
-        "data": prices, 
-        "data_source": "Binance",
+        "success": True,
+        "data": prices,
+        "data_source": f"Binance ({live_count} live, {simulated_count} simulated)",
         "response_time_ms": round((time.time() - current_time) * 1000, 2)
     }
 
@@ -1091,7 +1101,7 @@ def _get_simulated_price(symbol: str) -> Dict:
     history.append(new_price)
     if len(history) > 100:
         history.pop(0)
-    
+
     return {
         "price": round(new_price, 2),
         "change_24h": round(((new_price - history[-2]) / history[-2]) * 100, 2) if len(history) > 1 else 0,
@@ -1106,7 +1116,7 @@ async def get_prediction(symbol: str):
     """Get AI prediction for symbol"""
     if symbol not in trading_state["price_history"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
-    
+
     signal = ai_predictor.generate_signal(symbol)
     return {"success": True, "symbol": symbol, "prediction": signal}
 
@@ -1115,25 +1125,25 @@ async def explain_ai_decision(symbol: str):
     """Get detailed explanation of AI decision for a symbol"""
     if symbol not in trading_state["price_history"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
-    
+
     # Check cache first for faster loading
     current_time = time.time()
     cache_key = symbol
-    if (cache_key in ai_explanation_cache["data"] and 
+    if (cache_key in ai_explanation_cache["data"] and
         cache_key in ai_explanation_cache["timestamp"] and
         (current_time - ai_explanation_cache["timestamp"][cache_key]) < ai_explanation_cache["ttl"]):
         cached_data = ai_explanation_cache["data"][cache_key]
         cached_data["cache_hit"] = True
         logger.debug(f"Using cached AI explanation for {symbol}")
         return {"success": True, "data": cached_data, "source": "cache"}
-    
+
     # Get AI signal with all indicators
     signal = ai_predictor.generate_signal(symbol)
     indicators = signal["indicators"]
-    
+
     # Build detailed reasoning
     reasoning = []
-    
+
     # RSI Analysis
     rsi = indicators.get("rsi", 50)
     if rsi < 30:
@@ -1157,7 +1167,7 @@ async def explain_ai_decision(symbol: str):
             "impact": 0.0,
             "signal": "NEUTRAL"
         })
-    
+
     # MACD Analysis
     macd = indicators.get("macd", 0)
     if macd > 0:
@@ -1174,7 +1184,7 @@ async def explain_ai_decision(symbol: str):
             "impact": -1.5,
             "signal": "SELL"
         })
-    
+
     # Moving Average Crossover
     ma_5 = indicators.get("ma_5", 0)
     ma_20 = indicators.get("ma_20", 0)
@@ -1193,13 +1203,13 @@ async def explain_ai_decision(symbol: str):
             "impact": -1.0,
             "signal": "SELL"
         })
-    
+
     # Bollinger Bands
     current_price = indicators.get("current_price", 0)
     bb_upper = indicators.get("bb_upper", 0)
     bb_lower = indicators.get("bb_lower", 0)
     bb_position = (current_price - bb_lower) / (bb_upper - bb_lower + 0.0001)
-    
+
     if bb_position <= 0.2:
         reasoning.append({
             "indicator": "Bollinger Bands",
@@ -1221,7 +1231,7 @@ async def explain_ai_decision(symbol: str):
             "impact": 0.0,
             "signal": "NEUTRAL"
         })
-    
+
     # Volatility Analysis
     volatility = indicators.get("volatility", 0)
     reasoning.append({
@@ -1230,7 +1240,7 @@ async def explain_ai_decision(symbol: str):
         "impact": 0.0,
         "signal": "RISK_FACTOR"
     })
-    
+
     # Prepare response
     explanation = {
         "symbol": symbol,
@@ -1256,35 +1266,35 @@ async def explain_ai_decision(symbol: str):
         "indicators_analyzed": len(reasoning),
         "timestamp": datetime.now().isoformat()
     }
-    
+
     # Add ML prediction if available
     if "ml_prediction" in signal:
         explanation["ml_prediction"] = signal["ml_prediction"]
-    
+
     # Cache the explanation for faster subsequent requests
     ai_explanation_cache["data"][cache_key] = explanation
     ai_explanation_cache["timestamp"][cache_key] = current_time
-    
+
     return {"success": True, "data": explanation, "source": "fresh"}
 
 @app.post("/api/trades/execute")
 async def execute_trade(request: TradeRequest):
     """Execute trade with full validation"""
     symbol = request.symbol.upper().strip()
-    
+
     if symbol not in trading_state["price_history"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
-    
+
     # Get current price
     current_price = trading_state["price_history"][symbol][-1]
-    
+
     # Get AI signal
     signal = ai_predictor.generate_signal(symbol)
-    
+
     # Oracle verification
     market_data = {"price": current_price, "symbol": symbol}
     oracle_verification = oracle.verify_signal(signal, market_data)
-    
+
     if not oracle_verification["is_verified"] and not request.force_execute:
         return {
             "success": False,
@@ -1292,14 +1302,14 @@ async def execute_trade(request: TradeRequest):
             "reason": "Oracle verification failed",
             "verification": oracle_verification
         }
-    
+
     # Smart contract validation
     portfolio = {
         "total_value": trading_state["balance"] + trading_state["pnl"],
         "profit_loss_pct": (trading_state["pnl"] / trading_state["balance"]) * 100
     }
     validation = smart_contract.validate_trade(signal, portfolio)
-    
+
     if not validation["is_valid"] and not request.force_execute:
         return {
             "success": False,
@@ -1404,19 +1414,19 @@ async def execute_trade(request: TradeRequest):
                 "oracle_verification": oracle_verification,
                 "validation": validation,
             }
-    
+
     # Execute trade
     execution = trading_engine.execute_trade(signal, symbol, current_price)
-    
+
     if not execution["success"]:
         return execution
-    
+
     # Record on-chain
     on_chain_record = smart_contract.record_trade(execution["trade"])
-    
+
     # Settle trade
     settlement = smart_contract.settle_trade(execution["trade"])
-    
+
     return {
         "success": True,
         "trade": execution["trade"],
@@ -2034,7 +2044,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     history.append(new_price)
                     if len(history) > 100:
                         history.pop(0)
-            
+
             # Send update
             data = {
                 "type": "market_update",
@@ -2047,7 +2057,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "data_source": "Binance",
                 "timestamp": datetime.now().isoformat()
             }
-            
+
             await websocket.send_text(json.dumps(data))
             await asyncio.sleep(2)
     except:
@@ -2064,9 +2074,9 @@ async def run_backtest(
     """Run backtest for a symbol and strategy"""
     if symbol not in ["BTC", "ETH", "BNB", "SOL"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
-    
+
     result = backtest_engine.run_backtest(symbol, strategy, period_days)
-    
+
     return {
         "success": True,
         "data": result
@@ -2077,10 +2087,10 @@ async def compare_strategies(symbol: str, period_days: int = 30):
     """Compare multiple strategies for a symbol"""
     if symbol not in ["BTC", "ETH", "BNB", "SOL"]:
         raise HTTPException(status_code=404, detail="Symbol not found")
-    
+
     strategies = ["ai_multi_indicator", "momentum", "mean_reversion"]
     result = backtest_engine.compare_strategies(symbol, strategies, period_days)
-    
+
     return {
         "success": True,
         "data": result
@@ -2090,7 +2100,7 @@ async def compare_strategies(symbol: str, period_days: int = 30):
 async def get_backtest_results():
     """Get all backtest results"""
     results = backtest_engine.get_results_summary()
-    
+
     return {
         "success": True,
         "data": results
@@ -2110,14 +2120,14 @@ async def get_user_profile():
 async def update_user_profile(update: UserProfileUpdate):
     """Update user profile"""
     updates = {k: v for k, v in update.dict().items() if v is not None}
-    
+
     # Validate risk tolerance
     if "risk_tolerance" in updates:
         if updates["risk_tolerance"] not in ["conservative", "moderate", "aggressive"]:
             raise HTTPException(status_code=400, detail="Invalid risk tolerance")
-    
+
     user_profile.update(updates)
-    
+
     return {
         "success": True,
         "message": "Profile updated successfully",
@@ -2129,14 +2139,14 @@ async def get_user_stats():
     """Get user trading statistics"""
     # Update stats from trading engine
     performance = trading_engine.get_performance()
-    
+
     user_profile["stats"].update({
         "total_trades": performance.get("total_trades", 0),
         "total_profit": performance.get("total_profit", 0),
         "best_trade": performance.get("best_trade", 0),
         "win_rate": performance.get("win_rate", 0)
     })
-    
+
     return {
         "success": True,
         "data": user_profile["stats"]
@@ -2149,13 +2159,13 @@ async def get_wallet():
     """Get wallet information"""
     # Calculate total value in USDT
     total_value = wallet_state["balances"]["USDT"]
-    
+
     # Add crypto values (convert to USDT)
     for symbol in ["BTC", "ETH", "BNB", "SOL"]:
         if wallet_state["balances"][symbol] > 0:
             current_price = trading_state["price_history"][symbol][-1]
             total_value += wallet_state["balances"][symbol] * current_price
-    
+
     return {
         "success": True,
         "data": {
@@ -2170,18 +2180,18 @@ async def get_wallet():
 async def get_wallet_balances():
     """Get all wallet balances with current values"""
     balances = []
-    
+
     for currency in ["USDT", "BTC", "ETH", "BNB", "SOL"]:
         balance = wallet_state["balances"][currency]
         locked = wallet_state["locked_balances"][currency]
-        
+
         if currency == "USDT":
             value_usdt = balance
             price = 1.0
         else:
             price = trading_state["price_history"][currency][-1]
             value_usdt = balance * price
-        
+
         balances.append({
             "currency": currency,
             "balance": round(balance, 6),
@@ -2190,7 +2200,7 @@ async def get_wallet_balances():
             "price_usdt": round(price, 2),
             "value_usdt": round(value_usdt, 2)
         })
-    
+
     return {
         "success": True,
         "data": balances
@@ -2201,22 +2211,22 @@ async def deposit_to_wallet(operation: WalletOperation):
     """Deposit funds to wallet"""
     if operation.operation != "deposit":
         raise HTTPException(status_code=400, detail="Invalid operation")
-    
+
     if operation.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
-    
+
     currency = operation.currency
     if currency not in wallet_state["balances"]:
         raise HTTPException(status_code=400, detail="Invalid currency")
-    
+
     # Add to balance
     wallet_state["balances"][currency] += operation.amount
     wallet_state["total_deposited"] += operation.amount
-    
+
     # Update trading balance if USDT
     if currency == "USDT":
         trading_state["balance"] += operation.amount
-    
+
     # Record transaction
     transaction = {
         "tx_id": f"TX_{len(wallet_state['transaction_history']) + 1}",
@@ -2227,7 +2237,7 @@ async def deposit_to_wallet(operation: WalletOperation):
         "timestamp": datetime.now().isoformat()
     }
     wallet_state["transaction_history"].append(transaction)
-    
+
     return {
         "success": True,
         "message": f"Deposited {operation.amount} {currency}",
@@ -2240,27 +2250,27 @@ async def withdraw_from_wallet(operation: WalletOperation):
     """Withdraw funds from wallet"""
     if operation.operation != "withdraw":
         raise HTTPException(status_code=400, detail="Invalid operation")
-    
+
     if operation.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
-    
+
     currency = operation.currency
     if currency not in wallet_state["balances"]:
         raise HTTPException(status_code=400, detail="Invalid currency")
-    
+
     # Check available balance
     available = wallet_state["balances"][currency] - wallet_state["locked_balances"][currency]
     if operation.amount > available:
         raise HTTPException(status_code=400, detail="Insufficient balance")
-    
+
     # Deduct from balance
     wallet_state["balances"][currency] -= operation.amount
     wallet_state["total_withdrawn"] += operation.amount
-    
+
     # Update trading balance if USDT
     if currency == "USDT":
         trading_state["balance"] -= operation.amount
-    
+
     # Record transaction
     transaction = {
         "tx_id": f"TX_{len(wallet_state['transaction_history']) + 1}",
@@ -2271,7 +2281,7 @@ async def withdraw_from_wallet(operation: WalletOperation):
         "timestamp": datetime.now().isoformat()
     }
     wallet_state["transaction_history"].append(transaction)
-    
+
     return {
         "success": True,
         "message": f"Withdrew {operation.amount} {currency}",
@@ -2283,7 +2293,7 @@ async def withdraw_from_wallet(operation: WalletOperation):
 async def get_wallet_transactions(limit: int = 20):
     """Get wallet transaction history"""
     transactions = wallet_state["transaction_history"][-limit:][::-1]
-    
+
     return {
         "success": True,
         "data": transactions,
@@ -2318,7 +2328,7 @@ async def get_blockchain_balance(address: str):
         balance = blockchain_service.get_balance(address)
         can_claim = blockchain_service.can_claim_faucet(address)
         cooldown = blockchain_service.time_until_next_claim(address)
-        
+
         return {
             "success": True,
             "data": {
@@ -2345,13 +2355,13 @@ async def claim_faucet_tokens(request: dict):
         address = request.get("address")
         if not address:
             raise HTTPException(status_code=400, detail="Address required")
-        
+
         if not blockchain_service.is_ready():
             raise HTTPException(
                 status_code=503,
                 detail="Blockchain service unavailable"
             )
-        
+
         # Check if can claim
         can_claim = blockchain_service.can_claim_faucet(address)
         if not can_claim:
@@ -2360,7 +2370,7 @@ async def claim_faucet_tokens(request: dict):
                 status_code=400,
                 detail=f"Faucet cooldown active. Wait {round(cooldown/3600, 1)} hours"
             )
-        
+
         # Return transaction data for frontend to sign
         return {
             "success": True,
@@ -2382,7 +2392,7 @@ async def verify_blockchain_transaction(tx_hash: str):
     """Verify a blockchain transaction"""
     try:
         result = blockchain_service.verify_transaction(tx_hash)
-        
+
         if result:
             return {
                 "success": True,
@@ -2408,11 +2418,11 @@ async def train_ml_model():
     """Train ML model on historical trades"""
     try:
         from settlement_service import settlement_service
-        
+
         # Fetch historical trades
         trades = []
         trade_counter = settlement_service.contract.functions.tradeCounter().call()
-        
+
         for trade_id in range(1, min(trade_counter + 1, 51)):  # Max 50 trades
             try:
                 trade_data = settlement_service.contract.functions.getTrade(trade_id).call()
@@ -2421,7 +2431,7 @@ async def train_ml_model():
                     indicators = ai_predictor.calculate_indicators(
                         trading_state["price_history"].get("BTC", [50000] * 100)
                     )
-                    
+
                     trades.append({
                         "indicators": indicators,
                         "profit_loss": float(trade_data[6]) / 1e18
@@ -2429,11 +2439,11 @@ async def train_ml_model():
             except Exception as e:
                 logger.debug(f"Error fetching trade {trade_id}: {e}")
                 continue
-        
+
         # Train model
         result = ml_predictor.train(trades)
         return {"success": True, "training_result": result}
-    
+
     except Exception as e:
         logger.error(f"ML training error: {e}")
         return {"success": False, "error": str(e)}
@@ -2494,7 +2504,7 @@ async def get_project_info():
 @app.on_event("startup")
 async def startup_background_services():
     """Start background services"""
-    
+
     # Signal scheduler disabled - using on-demand with cache instead
     if env_flag("ENABLE_SIGNAL_SCHEDULER", False):
         try:
@@ -2505,7 +2515,7 @@ async def startup_background_services():
             logger.warning(f"Signal scheduler failed to start: {e}")
     else:
         logger.info("💤 Signal scheduler disabled (using on-demand with 30min manual signal cache)")
-    
+
     # Start settlement worker
     if not env_flag("ENABLE_SETTLEMENT_WORKER", False):
         logger.info("💤 Settlement worker disabled for this process")
@@ -2539,7 +2549,7 @@ class BinanceCancelRequest(BaseModel):
 async def get_binance_trading_status():
     """Get Binance trading status and configuration"""
     info = binance_trading.get_trading_info()
-    
+
     return {
         "success": True,
         "data": info
@@ -2550,12 +2560,12 @@ async def get_binance_balance(asset: str = "USDT"):
     """Get balance for specific asset"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     balance = binance_trading.get_balance(asset)
-    
+
     if balance is None:
         raise HTTPException(status_code=500, detail="Failed to fetch balance")
-    
+
     return {
         "success": True,
         "asset": asset,
@@ -2567,9 +2577,9 @@ async def get_all_binance_balances():
     """Get all non-zero balances"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     balances = binance_trading.get_all_balances()
-    
+
     return {
         "success": True,
         "data": balances
@@ -2580,23 +2590,23 @@ async def execute_binance_trade(request: BinanceTradeRequest):
     """Execute trade on Binance"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     try:
         # Calculate quantity if usdt_amount is provided
         if request.usdt_amount and not request.quantity:
             # Get current price
             from binance_api import binance_api
             current_price = binance_api.get_price(request.symbol)
-            
+
             if not current_price:
                 raise HTTPException(status_code=400, detail="Failed to get current price")
-            
+
             request.quantity = binance_trading.calculate_quantity(
                 request.symbol,
                 request.usdt_amount,
                 current_price
             )
-        
+
         # Place order based on type
         if request.order_type.upper() == "MARKET":
             result = binance_trading.place_market_order(
@@ -2607,7 +2617,7 @@ async def execute_binance_trade(request: BinanceTradeRequest):
         elif request.order_type.upper() == "LIMIT":
             if not request.price:
                 raise HTTPException(status_code=400, detail="Price required for limit orders")
-            
+
             result = binance_trading.place_limit_order(
                 request.symbol,
                 request.side,
@@ -2616,15 +2626,15 @@ async def execute_binance_trade(request: BinanceTradeRequest):
             )
         else:
             raise HTTPException(status_code=400, detail="Invalid order type")
-        
+
         if not result:
             raise HTTPException(status_code=500, detail="Failed to place order")
-        
+
         return {
             "success": True,
             "order": result
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2636,9 +2646,9 @@ async def get_open_binance_orders(symbol: Optional[str] = None):
     """Get open orders"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     orders = binance_trading.get_open_orders(symbol)
-    
+
     return {
         "success": True,
         "data": orders,
@@ -2650,9 +2660,9 @@ async def get_binance_order_history(symbol: str, limit: int = 50):
     """Get order history for a symbol"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     orders = binance_trading.get_all_orders(symbol, limit)
-    
+
     return {
         "success": True,
         "data": orders,
@@ -2664,9 +2674,9 @@ async def get_binance_trade_history(symbol: str, limit: int = 50):
     """Get trade history for a symbol"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     trades = binance_trading.get_trade_history(symbol, limit)
-    
+
     return {
         "success": True,
         "data": trades,
@@ -2678,12 +2688,12 @@ async def cancel_binance_order(request: BinanceCancelRequest):
     """Cancel an order"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     result = binance_trading.cancel_order(request.symbol, request.order_id)
-    
+
     if not result:
         raise HTTPException(status_code=500, detail="Failed to cancel order")
-    
+
     return {
         "success": True,
         "data": result
@@ -2694,12 +2704,12 @@ async def get_binance_order_status(symbol: str, order_id: int):
     """Get order status"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     status = binance_trading.get_order_status(symbol, order_id)
-    
+
     if not status:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     return {
         "success": True,
         "data": status
@@ -2710,11 +2720,11 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
     """Execute AI-powered trade on Binance"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     try:
         # Get AI signal
         signal = ai_predictor.generate_signal(symbol.replace('/USDT', ''))
-        
+
         # Check if signal is actionable
         if signal["signal"] == "HOLD":
             return {
@@ -2722,34 +2732,34 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
                 "reason": "AI signal is HOLD - no trade executed",
                 "signal": signal
             }
-        
+
         # Get current price
         from binance_api import binance_api
         current_price = binance_api.get_price(symbol)
-        
+
         if not current_price:
             raise HTTPException(status_code=400, detail="Failed to get current price")
-        
+
         # Calculate quantity
         quantity = binance_trading.calculate_quantity(symbol, usdt_amount, current_price)
-        
+
         # Execute trade
         result = binance_trading.place_market_order(
             symbol,
             signal["signal"],
             quantity
         )
-        
+
         if not result:
             raise HTTPException(status_code=500, detail="Failed to execute trade")
-        
+
         return {
             "success": True,
             "signal": signal,
             "order": result,
             "message": f"AI {signal['signal']} order executed successfully"
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2785,7 +2795,7 @@ class BinanceCancelRequest(BaseModel):
 async def get_binance_trading_status():
     """Get Binance trading status and configuration"""
     info = binance_trading.get_trading_info()
-    
+
     return {
         "success": True,
         "data": info
@@ -2796,12 +2806,12 @@ async def get_binance_balance(asset: str = "USDT"):
     """Get balance for specific asset"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     balance = binance_trading.get_balance(asset)
-    
+
     if balance is None:
         raise HTTPException(status_code=500, detail="Failed to fetch balance")
-    
+
     return {
         "success": True,
         "asset": asset,
@@ -2813,9 +2823,9 @@ async def get_all_binance_balances():
     """Get all non-zero balances"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     balances = binance_trading.get_all_balances()
-    
+
     return {
         "success": True,
         "data": balances
@@ -2826,23 +2836,23 @@ async def execute_binance_trade(request: BinanceTradeRequest):
     """Execute trade on Binance"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     try:
         # Calculate quantity if usdt_amount is provided
         if request.usdt_amount and not request.quantity:
             # Get current price
             from binance_api import binance_api
             current_price = binance_api.get_price(request.symbol)
-            
+
             if not current_price:
                 raise HTTPException(status_code=400, detail="Failed to get current price")
-            
+
             request.quantity = binance_trading.calculate_quantity(
                 request.symbol,
                 request.usdt_amount,
                 current_price
             )
-        
+
         # Place order based on type
         if request.order_type.upper() == "MARKET":
             result = binance_trading.place_market_order(
@@ -2853,7 +2863,7 @@ async def execute_binance_trade(request: BinanceTradeRequest):
         elif request.order_type.upper() == "LIMIT":
             if not request.price:
                 raise HTTPException(status_code=400, detail="Price required for limit orders")
-            
+
             result = binance_trading.place_limit_order(
                 request.symbol,
                 request.side,
@@ -2862,15 +2872,15 @@ async def execute_binance_trade(request: BinanceTradeRequest):
             )
         else:
             raise HTTPException(status_code=400, detail="Invalid order type")
-        
+
         if not result:
             raise HTTPException(status_code=500, detail="Failed to place order")
-        
+
         return {
             "success": True,
             "order": result
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2882,9 +2892,9 @@ async def get_open_binance_orders(symbol: Optional[str] = None):
     """Get open orders"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     orders = binance_trading.get_open_orders(symbol)
-    
+
     return {
         "success": True,
         "data": orders,
@@ -2896,9 +2906,9 @@ async def get_binance_order_history(symbol: str, limit: int = 50):
     """Get order history for a symbol"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     orders = binance_trading.get_all_orders(symbol, limit)
-    
+
     return {
         "success": True,
         "data": orders,
@@ -2910,9 +2920,9 @@ async def get_binance_trade_history(symbol: str, limit: int = 50):
     """Get trade history for a symbol"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     trades = binance_trading.get_trade_history(symbol, limit)
-    
+
     return {
         "success": True,
         "data": trades,
@@ -2924,12 +2934,12 @@ async def cancel_binance_order(request: BinanceCancelRequest):
     """Cancel an order"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     result = binance_trading.cancel_order(request.symbol, request.order_id)
-    
+
     if not result:
         raise HTTPException(status_code=500, detail="Failed to cancel order")
-    
+
     return {
         "success": True,
         "data": result
@@ -2940,12 +2950,12 @@ async def get_binance_order_status(symbol: str, order_id: int):
     """Get order status"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     status = binance_trading.get_order_status(symbol, order_id)
-    
+
     if not status:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     return {
         "success": True,
         "data": status
@@ -2956,11 +2966,11 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
     """Execute AI-powered trade on Binance"""
     if not binance_trading.is_configured:
         raise HTTPException(status_code=400, detail="Binance trading not configured")
-    
+
     try:
         # Get AI signal
         signal = ai_predictor.generate_signal(symbol.replace('/USDT', ''))
-        
+
         # Check if signal is actionable
         if signal["signal"] == "HOLD":
             return {
@@ -2968,34 +2978,34 @@ async def execute_ai_binance_trade(symbol: str, usdt_amount: float = 10.0):
                 "reason": "AI signal is HOLD - no trade executed",
                 "signal": signal
             }
-        
+
         # Get current price
         from binance_api import binance_api
         current_price = binance_api.get_price(symbol)
-        
+
         if not current_price:
             raise HTTPException(status_code=400, detail="Failed to get current price")
-        
+
         # Calculate quantity
         quantity = binance_trading.calculate_quantity(symbol, usdt_amount, current_price)
-        
+
         # Execute trade
         result = binance_trading.place_market_order(
             symbol,
             signal["signal"],
             quantity
         )
-        
+
         if not result:
             raise HTTPException(status_code=500, detail="Failed to execute trade")
-        
+
         return {
             "success": True,
             "signal": signal,
             "order": result,
             "message": f"AI {signal['signal']} order executed successfully"
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3010,29 +3020,29 @@ async def get_enhanced_prediction(symbol: str):
     """Get enhanced AI prediction using LSTM + ML + CoinGecko data"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="Enhanced AI features not available. Install TensorFlow: pip install tensorflow"
         )
-    
+
     try:
         # Get price history
         price_history = trading_state["price_history"].get(symbol, [])
-        
+
         if len(price_history) < 20:
             return {
                 "success": False,
                 "error": "Insufficient price history for enhanced prediction",
                 "symbol": symbol
             }
-        
+
         # Generate enhanced prediction
         prediction = enhanced_predictor.predict(symbol, price_history)
-        
+
         return {
             "success": True,
             "data": prediction
         }
-    
+
     except Exception as e:
         logger.error(f"Enhanced prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -3043,18 +3053,18 @@ async def get_coingecko_data(symbol: str):
     """Get market data from CoinGecko API"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="CoinGecko integration not available")
-    
+
     try:
         market_data = coingecko_api.get_enhanced_market_data(symbol)
-        
+
         if not market_data:
             raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
-        
+
         return {
             "success": True,
             "data": market_data
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3079,16 +3089,16 @@ async def get_market_sentiment(symbol: str):
 
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="Sentiment integrations are not available")
-    
+
     try:
         sentiment = coingecko_api.get_market_sentiment(normalized_symbol)
-        
+
         if not sentiment:
             sentiment = build_sentiment_fallback(
                 normalized_symbol,
                 reason=f"CoinGecko sentiment is temporarily unavailable for {normalized_symbol}",
             )
-        
+
         sentiment["source"] = sentiment.get("source") or "CoinGecko"
 
         return {
@@ -3096,7 +3106,7 @@ async def get_market_sentiment(symbol: str):
             "data": sentiment,
             "fallback": bool(sentiment.get("fallback")),
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3116,10 +3126,10 @@ async def get_global_market():
     """Get global cryptocurrency market data"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="CoinGecko integration not available")
-    
+
     try:
         global_data = coingecko_api.get_global_market_data()
-        
+
         if not global_data:
             return {
                 "success": True,
@@ -3127,13 +3137,13 @@ async def get_global_market():
                 "fallback": True,
                 "message": "CoinGecko global market data is temporarily unavailable. Use cached frontend market overview until retry.",
             }
-        
+
         return {
             "success": True,
             "data": global_data,
             "fallback": bool(global_data.get("stale")),
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3151,18 +3161,18 @@ async def get_trending_coins():
     """Get trending cryptocurrencies"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="CoinGecko integration not available")
-    
+
     try:
         trending = coingecko_api.get_trending_coins()
-        
+
         if not trending:
             raise HTTPException(status_code=500, detail="Failed to fetch trending coins")
-        
+
         return {
             "success": True,
             "data": trending
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3597,7 +3607,7 @@ async def get_ai_explainability_bundle(
             pass  # Sentiment is optional, no warning needed
 
     llm_overlay = None
-    
+
     # Try Groq first (free tier)
     if GROQ_AVAILABLE and groq_service and groq_service.is_available():
         try:
@@ -3612,7 +3622,7 @@ async def get_ai_explainability_bundle(
             explain_data["llm_overlay"] = llm_overlay
         except Exception as e:
             warnings.append(f"Groq overlay unavailable: {e}")
-    
+
     # Fallback to OpenRouter if Groq failed
     if not llm_overlay and OPENROUTER_AVAILABLE and openrouter_service and openrouter_service.is_available():
         try:
@@ -3659,14 +3669,14 @@ async def get_ai_explainability_bundle(
         "signal_available": True,
         "message": "Fresh signal generated. The next manual generation window opens in 30 minutes.",
     }
-    
+
     # Save to cache
     try:
         if set_cached:
             set_cached(cache_key, result, cache_duration)
     except Exception:
         pass  # Cache save failed, but return result anyway
-    
+
     return result
 
 
@@ -3678,10 +3688,10 @@ async def get_cached_signal(symbol: str):
     """
     try:
         from signal_scheduler import get_cached_signal, signal_cache
-        
+
         normalized_symbol = symbol.upper().strip()
         cached = get_cached_signal(normalized_symbol)
-        
+
         if not cached:
             return {
                 "success": False,
@@ -3689,9 +3699,9 @@ async def get_cached_signal(symbol: str):
                 "message": f"Signal for {normalized_symbol} is being generated. Try again in a few seconds.",
                 "available_symbols": list(signal_cache.cache.keys()),
             }
-        
+
         age = signal_cache.get_age(normalized_symbol)
-        
+
         return {
             "success": True,
             "data": cached,
@@ -3707,9 +3717,9 @@ async def get_signal_scheduler_status():
     """Get status of signal scheduler and all cached signals"""
     try:
         from signal_scheduler import get_signal_status
-        
+
         status = get_signal_status()
-        
+
         return {
             "success": True,
             "data": {
@@ -3734,23 +3744,23 @@ async def train_lstm_model(symbol: str, epochs: int = 50):
     """Train LSTM model on historical price data"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="LSTM features not available")
-    
+
     try:
         price_history = trading_state["price_history"].get(symbol, [])
-        
+
         if len(price_history) < lstm_predictor.sequence_length + 10:
             raise HTTPException(
                 status_code=400,
                 detail=f"Need at least {lstm_predictor.sequence_length + 10} data points for training"
             )
-        
+
         result = lstm_predictor.train(price_history, epochs=epochs)
-        
+
         return {
             "success": result.get("success", False),
             "data": result
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3763,26 +3773,26 @@ async def get_lstm_prediction(symbol: str):
     """Get LSTM price prediction"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="LSTM features not available")
-    
+
     try:
         price_history = trading_state["price_history"].get(symbol, [])
-        
+
         if len(price_history) < lstm_predictor.sequence_length:
             raise HTTPException(
                 status_code=400,
                 detail=f"Need at least {lstm_predictor.sequence_length} data points"
             )
-        
+
         prediction = lstm_predictor.predict(price_history)
-        
+
         if not prediction:
             raise HTTPException(status_code=500, detail="LSTM model not trained")
-        
+
         return {
             "success": True,
             "data": prediction
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3799,15 +3809,15 @@ async def get_ai_model_status():
             "error": "Enhanced AI features not available",
             "install_command": "pip install tensorflow keras"
         }
-    
+
     try:
         status = enhanced_predictor.get_model_status()
-        
+
         return {
             "success": True,
             "data": status
         }
-    
+
     except Exception as e:
         logger.error(f"Model status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -3818,7 +3828,7 @@ async def get_confidence_thresholds():
     """Get confidence score thresholds for color coding"""
     if not ENHANCED_AI_AVAILABLE:
         raise HTTPException(status_code=503, detail="Enhanced AI features not available")
-    
+
     return {
         "success": True,
         "data": {

@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<!-- Design reference only: static visual snapshot for workspace parity.
+     Active implementation lives in comprehensive_frontend/components/AiPowerTradeFinalWorkspace.js -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC Trading Workspace | AI Power Trade</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --void: #080a12; --deep: #0c0f18; --surface: #10131d; --elevated: #151927;
+      --border: #252b3d; --cyan: #00e5ff; --green: #00e676; --red: #ff4d5e;
+      --yellow: #ffd54f; --purple: #9b5cff; --text: #eef3fb;
+      --text-secondary: #b8c3d4; --text-tertiary: #8b98ad;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--void); color: var(--text); }
+    .terminal {
+      display: grid;
+      grid-template-columns: 280px 1fr 380px;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas: 'header header header' 'sidebar main panel' 'sidebar footer panel';
+      min-height: 100vh;
+      gap: 1px;
+      background: var(--border);
+    }
+    .header {
+      grid-area: header;
+      background: #070910;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { font-size: 0.95rem; font-weight: 900; letter-spacing: 0.5px;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .header-badges { display: flex; gap: 0.7rem; }
+    .badge {
+      padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.7rem;
+      font-weight: 800; text-transform: uppercase; border: 1px solid;
+    }
+    .badge-live { background: var(--green); color: #001b0d; border-color: var(--green); }
+    .badge-network { background: rgba(155,92,255,0.12); color: #d9ccff; border-color: rgba(155,92,255,0.4); }
+    .btn-connect {
+      padding: 0.6rem 1.1rem; background: linear-gradient(135deg, var(--cyan), #2196f3);
+      color: #001014; border: none; border-radius: 10px; font-weight: 900;
+      font-size: 0.8rem; cursor: pointer;
+    }
+    .header-bottom { display: grid; grid-template-columns: auto minmax(240px, 1fr) auto;
+      align-items: center; gap: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.06);
+      min-width: 0; }
+    .header-nav { display: flex; gap: 0.35rem; padding: 0.25rem; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 999px; background: rgba(255,255,255,0.03); }
+    .header-nav-link { padding: 0.5rem 1rem; border-radius: 999px; border: 1px solid transparent;
+      background: transparent; color: var(--text-secondary); text-decoration: none; font-size: 0.68rem;
+      font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; transition: all 0.2s; }
+    .header-nav-link:hover { color: var(--cyan); border-color: rgba(0,229,255,0.28); background: rgba(0,229,255,0.08); }
+    .header-nav-link.active { color: var(--cyan); border-color: rgba(0,229,255,0.35);
+      background: rgba(0,229,255,0.12); box-shadow: 0 0 18px rgba(0,229,255,0.12); }
+    .header-stats { display: flex; gap: 0.7rem; }
+    .stat { padding: 0.55rem 0.8rem; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+      background: rgba(255,255,255,0.03); font-size: 0.62rem; color: var(--text-tertiary);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
+    .stat strong { display: block; color: var(--text); font-weight: 700; font-size: 0.98rem;
+      letter-spacing: 0; text-transform: none; margin-top: 0.18rem; }
+    .header-movers { display: flex; align-items: center; gap: 0.7rem; min-width: 0;
+      padding: 0.42rem 0.55rem; border: 1px solid rgba(255,255,255,0.07); border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), rgba(9,14,22,0.78); }
+    .header-movers-label { flex: 0 0 auto; font-size: 0.62rem; font-weight: 900;
+      text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-tertiary); white-space: nowrap; }
+    .header-movers-window { position: relative; min-width: 0; overflow: hidden; flex: 1;
+      mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+      -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%); }
+    .header-movers-track { display: flex; align-items: center; gap: 0.55rem; width: max-content;
+      animation: moverTicker 22s linear infinite; will-change: transform; }
+    .header-movers:hover .header-movers-track { animation-play-state: paused; }
+    @keyframes moverTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    .mover-chip { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.42rem 0.7rem;
+      border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04);
+      color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700;
+      white-space: nowrap; cursor: pointer; transition: transform 0.2s, border-color 0.2s, background 0.2s; }
+    .mover-chip:hover { transform: translateY(-1px); border-color: rgba(0,229,255,0.22);
+      background: rgba(0,229,255,0.08); }
+    .mover-chip.positive { color: #a9ffcf; border-color: rgba(0,230,118,0.2); background: rgba(0,230,118,0.08); }
+    .mover-chip.negative { color: #ffb7c0; border-color: rgba(255,77,94,0.2); background: rgba(255,77,94,0.08); }
+    .mover-symbol { font-weight: 800; }
+    .mover-change { font-size: 0.68rem; }
+    .sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; }
+    .sidebar-search { padding: 1rem 1.5rem 1rem; }
+    .search-input { width: 100%; padding: 0.6rem 0.9rem; background: var(--deep);
+      border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+      font-size: 0.75rem; transition: border-color 0.2s; }
+    .search-input:focus { border-color: var(--cyan); }
+    .search-input::placeholder { color: var(--text-muted); }
+    .sidebar-filters { display: flex; gap: 0.4rem; padding: 0 1.5rem 1rem; }
+    .filter-tab { flex: 1; padding: 0.5rem; background: transparent; border: 1px solid var(--border);
+      color: var(--text-secondary); border-radius: 6px; font-size: 0.68rem; font-weight: 800;
+      text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+    .filter-tab:hover { background: rgba(255,255,255,0.03); }
+    .filter-tab.active { background: rgba(0,229,255,0.12); border-color: var(--cyan); color: var(--cyan); }
+    .sidebar-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border); background: #0c0f18; }
+    .global-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .global-stat { padding: 0.5rem; background: var(--elevated); border: 1px solid var(--border);
+      border-radius: 6px; text-align: center; }
+    .global-stat-value { font-size: 0.85rem; font-weight: 800; display: block; margin-bottom: 0.2rem; }
+    .global-stat-label { font-size: 0.65rem; color: var(--text-tertiary); text-transform: uppercase; font-weight: 700; }
+    .confidence-bar { height: 4px; background: rgba(255,255,255,0.05); border-radius: 999px;
+      margin-top: 0.6rem; overflow: hidden; }
+    .confidence-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan));
+      border-radius: 999px; transition: width 0.3s; }
+    .market-item {
+      padding: 1rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.03);
+      cursor: pointer; transition: background 0.2s;
+    }
+    .market-item:hover { background: rgba(0,229,255,0.05); }
+    .market-item.active { background: rgba(0,229,255,0.08); border-left: 3px solid var(--cyan); }
+    .market-pair { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem;
+      display: flex; justify-content: space-between; }
+    .market-price { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+      color: var(--text-secondary); }
+    .market-signal {
+      display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.6rem;
+      background: rgba(0,230,118,0.12); border: 1px solid rgba(0,230,118,0.25);
+      border-radius: 6px; font-size: 0.7rem; font-weight: 800; color: var(--green);
+      margin-top: 0.5rem;
+    }
+    .main { grid-area: main; background: var(--deep); overflow-y: auto; padding: 1rem; }
+    .ai-decision { display: flex; flex-direction: column; gap: 1rem; }
+    .ai-decision-top { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1rem; }
+    .decision-card {
+      background: linear-gradient(135deg, rgba(0,229,255,0.06), rgba(155,92,255,0.06));
+      border: 1px solid rgba(0,229,255,0.25); border-radius: 10px; padding: 1rem;
+    }
+    .decision-header { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+    .decision-info h3 { font-size: 0.68rem; font-weight: 900; text-transform: uppercase;
+      color: var(--text-secondary); margin-bottom: 0.35rem; }
+    .decision-info h1 { font-size: 1.5rem; font-weight: 900; color: var(--green); margin-bottom: 0.45rem; }
+    .decision-info p { font-size: 0.68rem; color: var(--text-tertiary); line-height: 1.45; }
+    .confidence-ring {
+      width: 85px; height: 85px; border-radius: 50%;
+      background: conic-gradient(var(--green) 0deg 266deg, rgba(255,255,255,0.08) 266deg 360deg);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 22px rgba(0,230,118,0.15);
+    }
+    .confidence-inner {
+      width: 66px; height: 66px; border-radius: 50%; background: var(--deep);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .confidence-value { font-size: 1.35rem; font-weight: 900; color: var(--green); }
+    .confidence-label { font-size: 0.58rem; font-weight: 900; text-transform: uppercase;
+      color: var(--text-tertiary); }
+    .signal-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+    .metric-box {
+      padding: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 6px; text-align: center;
+    }
+    .metric-label { font-size: 0.6rem; font-weight: 900; text-transform: uppercase;
+      color: var(--text-tertiary); margin-bottom: 0.3rem; }
+    .metric-value { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 800; }
+    .insight-card { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem; }
+    .insight-title { font-size: 0.7rem; font-weight: 900; text-transform: uppercase;
+      color: var(--text-secondary); margin-bottom: 1rem; }
+    .model-row { margin-bottom: 0.5rem; }
+    .model-header { display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 0.35rem; }
+    .model-name { color: var(--text-secondary); }
+    .model-score { font-weight: 800; }
+    .progress-bar { height: 4px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan)); border-radius: 999px; }
+    .explainer-bridge {
+      margin-top: 1rem; padding: 1rem 1.2rem;
+      background: linear-gradient(135deg, rgba(0,229,255,0.08), rgba(155,92,255,0.08));
+      border: 1px solid rgba(0,229,255,0.25); border-radius: 10px;
+      display: flex; justify-content: space-between; align-items: center; gap: 1.5rem;
+    }
+    .explainer-bridge-label { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--cyan); margin-bottom: 0.3rem; }
+    .explainer-bridge p { font-size: 0.75rem; color: var(--text-secondary); line-height: 1.55; margin: 0; }
+    .explainer-bridge-tags { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
+    .explainer-bridge-tag {
+      padding: 0.3rem 0.6rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04); color: var(--text-tertiary);
+      font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+    }
+    .btn { padding: 0.6rem 1rem; border-radius: 10px; font-weight: 800; font-size: 0.75rem;
+      cursor: pointer; border: 1px solid; text-decoration: none; display: inline-flex;
+      align-items: center; justify-content: center; }
+    .btn-fill { background: var(--green); color: #001b0d; border-color: var(--green); }
+    .ai-decision-bottom { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; min-height: 150px; }
+    .decision-card-compact { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem; }
+    .decision-header-compact { display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+    .info-row { display: flex; justify-content: space-between; font-size: 0.68rem;
+      padding: 0.28rem 0; color: var(--text-tertiary); }
+    .info-row strong { color: var(--text); font-weight: 700; }
+    .panel { grid-area: panel; background: var(--surface); padding: 1rem; gap: 0.75rem;
+      display: flex; flex-direction: column; overflow-y: auto; }
+    .wallet-card { padding: 0.7rem; background: rgba(155,92,255,0.1); border: 1px solid rgba(155,92,255,0.35);
+      border-radius: 10px; font-size: 0.72rem; line-height: 1.5; color: #d9ccff; }
+    .wallet-card strong { color: #fff; font-weight: 800; }
+    .ai-lock { padding: 0.85rem; background: linear-gradient(135deg, rgba(0,230,118,0.08), rgba(0,229,255,0.06));
+      border: 1px solid rgba(0,230,118,0.3); border-radius: 10px; }
+    .ai-lock-header { display: flex; gap: 0.6rem; margin-bottom: 0.75rem; }
+    .ai-lock-icon { width: 34px; height: 34px; border-radius: 6px;
+      background: rgba(0,230,118,0.15); border: 1px solid rgba(0,230,118,0.35);
+      display: flex; align-items: center; justify-content: center; font-size: 1.15rem; }
+    .ai-lock-info strong { display: block; font-size: 0.8rem; font-weight: 800;
+      color: var(--cyan); margin-bottom: 0.2rem; }
+    .ai-lock-info p { font-size: 0.68rem; color: var(--text-tertiary); line-height: 1.35; }
+    .ai-lock-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+    .ai-lock-item { padding: 0.55rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 6px; text-align: center; }
+    .ai-lock-label { font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+      color: var(--text-tertiary); margin-bottom: 0.35rem; }
+    .ai-lock-value { font-family: 'JetBrains Mono', monospace; font-size: 0.94rem; font-weight: 800; }
+    .btn-execute-hero {
+      width: 100%; padding: 0.75rem; background: linear-gradient(135deg, var(--green), var(--cyan));
+      color: #001014; border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 800;
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+    }
+    .btn-execute-hero small { font-size: 0.68rem; font-weight: 700; opacity: 0.8; }
+    .footer { grid-area: footer; background: var(--surface); border-top: 1px solid var(--border);
+      height: 240px; display: flex; flex-direction: column; overflow: hidden; }
+    .footer-tabs { display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--border); }
+    .footer-tab { padding: 0.45rem 0.85rem; background: transparent; border: 1px solid var(--border);
+      color: var(--text-secondary); border-radius: 6px; font-size: 0.72rem; font-weight: 800; cursor: pointer; }
+    .footer-tab.active { background: rgba(0,229,255,0.12); border-color: var(--cyan); color: var(--cyan); }
+    .table-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.5rem;
+      padding: 0.45rem 0.5rem; font-size: 0.68rem; font-family: 'JetBrains Mono', monospace;
+      border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .table-row.header { color: var(--text-tertiary); font-weight: 800; background: rgba(255,255,255,0.02); }
+  </style>
+</head>
+<body>
+  <div class="terminal">
+    <header class="header">
+      <div class="header-top">
+        <div>
+          <div class="brand">AI POWER TRADE</div>
+          <div style="font-size: 0.66rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.16em; margin-top: 0.2rem;">Execution Workspace</div>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <div class="header-badges">
+            <span class="badge badge-network">Polygon Amoy</span>
+            <span class="badge badge-live">AI ONLINE</span>
+          </div>
+          <span class="badge" style="background: rgba(0,229,255,0.1); color: var(--cyan); border-color: rgba(0,229,255,0.3);">Network 80002</span>
+          <button class="btn-connect">Syncing Access</button>
+        </div>
+      </div>
+      <div class="header-bottom">
+        <nav class="header-nav">
+          <a href="#" class="header-nav-link active">App</a>
+          <a href="#" class="header-nav-link">AI Explainer</a>
+          <a href="#" class="header-nav-link">Trade History</a>
+        </nav>
+        <div class="header-movers">
+          <div class="header-movers-label">Top Movers</div>
+          <div class="header-movers-window">
+            <div class="header-movers-track">
+              <button class="mover-chip positive"><span class="mover-symbol">XRP</span><span class="mover-change">-0.3%</span></button>
+              <button class="mover-chip negative"><span class="mover-symbol">BTC</span><span class="mover-change">-2.2%</span></button>
+              <button class="mover-chip positive"><span class="mover-symbol">BNB</span><span class="mover-change">+0.9%</span></button>
+              <button class="mover-chip positive"><span class="mover-symbol">LINK</span><span class="mover-change">+0.9%</span></button>
+              <button class="mover-chip negative"><span class="mover-symbol">XRP</span><span class="mover-change">-0.6%</span></button>
+              <button class="mover-chip positive"><span class="mover-symbol">XRP</span><span class="mover-change">-0.3%</span></button>
+              <button class="mover-chip negative"><span class="mover-symbol">BTC</span><span class="mover-change">-2.2%</span></button>
+              <button class="mover-chip positive"><span class="mover-symbol">BNB</span><span class="mover-change">+0.9%</span></button>
+              <button class="mover-chip positive"><span class="mover-symbol">LINK</span><span class="mover-change">+0.9%</span></button>
+              <button class="mover-chip negative"><span class="mover-symbol">XRP</span><span class="mover-change">-0.6%</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="header-stats">
+          <div class="stat">Global Cap <strong>$2.7T</strong></div>
+          <div class="stat">BTC Dom <strong>58.4%</strong></div>
+          <div class="stat">AI Accuracy <strong style="color: var(--green);">46.1%</strong></div>
+        </div>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="sidebar-search">
+        <input type="text" class="search-input" placeholder="Search assets..." />
+      </div>
+      <div class="sidebar-filters">
+        <button class="filter-tab active">ALL</button>
+        <button class="filter-tab">BUY</button>
+        <button class="filter-tab">SELL</button>
+        <button class="filter-tab">HOLD</button>
+      </div>
+      <div class="market-item active">
+        <div class="market-pair">
+          <span>BTC/USDT</span>
+          <span style="color: var(--red);">-2.2%</span>
+        </div>
+        <div class="market-price">79,836.08</div>
+        <span class="market-signal">🤖 BUY · 74%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 74%;"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>ETH/USDT</span>
+          <span style="color: var(--red);">-8.1%</span>
+        </div>
+        <div class="market-price">3,562.87</div>
+        <span class="market-signal">🤖 BUY · 84%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 84%;"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>BNB/USDT</span>
+          <span style="color: var(--green);">+8.9%</span>
+        </div>
+        <div class="market-price">333.68</div>
+        <span class="market-signal" style="background: rgba(255,215,79,0.12); border-color: rgba(255,215,79,0.3); color: var(--yellow);">⚠️ HOLD · 63%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 63%; background: var(--yellow);"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>LINK/USDT</span>
+          <span style="color: var(--green);">+0.9%</span>
+        </div>
+        <div class="market-price">29.340</div>
+        <span class="market-signal" style="background: rgba(255,215,79,0.12); border-color: rgba(255,215,79,0.3); color: var(--yellow);">⚠️ HOLD · 72%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 72%; background: var(--yellow);"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>SOL/USDT</span>
+          <span style="color: var(--green);">+3.4%</span>
+        </div>
+        <div class="market-price">142.85</div>
+        <span class="market-signal">🤖 BUY · 81%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 81%;"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>XRP/USDT</span>
+          <span style="color: var(--red);">-1.2%</span>
+        </div>
+        <div class="market-price">2.184</div>
+        <span class="market-signal" style="background: rgba(255,77,94,0.12); border-color: rgba(255,77,94,0.3); color: var(--red);">📉 SELL · 78%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 78%; background: var(--red);"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>ADA/USDT</span>
+          <span style="color: var(--green);">+2.1%</span>
+        </div>
+        <div class="market-price">0.9845</div>
+        <span class="market-signal">🤖 BUY · 76%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 76%;"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>AVAX/USDT</span>
+          <span style="color: var(--red);">-4.3%</span>
+        </div>
+        <div class="market-price">38.92</div>
+        <span class="market-signal" style="background: rgba(255,77,94,0.12); border-color: rgba(255,77,94,0.3); color: var(--red);">📉 SELL · 69%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 69%; background: var(--red);"></div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-pair">
+          <span>MATIC/USDT</span>
+          <span style="color: var(--green);">+1.8%</span>
+        </div>
+        <div class="market-price">0.7234</div>
+        <span class="market-signal" style="background: rgba(255,215,79,0.12); border-color: rgba(255,215,79,0.3); color: var(--yellow);">⚠️ HOLD · 65%</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width: 65%; background: var(--yellow);"></div>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="global-stats">
+          <div class="global-stat">
+            <span class="global-stat-value">$103B</span>
+            <span class="global-stat-label">24h Volume</span>
+          </div>
+          <div class="global-stat">
+            <span class="global-stat-value" style="color: var(--green);">67</span>
+            <span class="global-stat-label">Fear & Greed</span>
+          </div>
+          <div class="global-stat">
+            <span class="global-stat-value" style="color: var(--purple);">FIRO</span>
+            <span class="global-stat-label">Trending</span>
+          </div>
+          <div class="global-stat">
+            <span class="global-stat-value">17,421</span>
+            <span class="global-stat-label">Active Assets</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="ai-decision">
+        <div class="ai-decision-top">
+          <div class="decision-card">
+            <div class="decision-header">
+              <div class="decision-info">
+                <h3>AI Decision</h3>
+                <h1>BUY BTC</h1>
+                <p>Breakout confirmation above spot-led liquidity shelf</p>
+              </div>
+              <div class="confidence-ring">
+                <div class="confidence-inner">
+                  <span class="confidence-value">74%</span>
+                  <span class="confidence-label">Confidence</span>
+                </div>
+              </div>
+            </div>
+            <div class="signal-metrics">
+              <div class="metric-box">
+                <div class="metric-label">Entry</div>
+                <div class="metric-value" style="color: var(--cyan);">$79,757</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Take Profit</div>
+                <div class="metric-value" style="color: var(--green);">$82,878</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Stop Loss</div>
+                <div class="metric-value" style="color: var(--red);">$78,399</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Risk Level</div>
+                <div class="metric-value" style="color: var(--green);">Medium</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">R/R Ratio</div>
+                <div class="metric-value">2.3x</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Horizon</div>
+                <div class="metric-value">12-36h</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+              <a href="#" class="btn" style="flex: 1; background: transparent; color: var(--cyan); border-color: var(--cyan);">Open AI Explainer</a>
+              <button class="btn btn-fill" style="flex: 1;">Auto Fill Trade</button>
+            </div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-title">Signal Breakdown</div>
+            <div class="model-row">
+              <div class="model-header">
+                <span class="model-name">Signal Forecast</span>
+                <span class="model-score" style="color: var(--green);">80%</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 80%;"></div>
+              </div>
+            </div>
+            <div class="model-row">
+              <div class="model-header">
+                <span class="model-name">Pattern Confirmation</span>
+                <span class="model-score" style="color: var(--green);">89%</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 89%;"></div>
+              </div>
+            </div>
+            <div class="model-row">
+              <div class="model-header">
+                <span class="model-name">Market Sentiment</span>
+                <span class="model-score" style="color: var(--yellow);">83%</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 83%; background: var(--yellow);"></div>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 1rem;">
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; text-align: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 800; display: block; margin-bottom: 0.2rem; color: var(--green);">+97.8%</span>
+                <span style="font-size: 0.58rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Total PnL</span>
+              </div>
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; text-align: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 800; display: block; margin-bottom: 0.2rem; color: var(--green);">46.1%</span>
+                <span style="font-size: 0.58rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Win Rate</span>
+              </div>
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; text-align: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 800; display: block; margin-bottom: 0.2rem;">13</span>
+                <span style="font-size: 0.58rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Trades</span>
+              </div>
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; text-align: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 800; display: block; margin-bottom: 0.2rem;">12-36h</span>
+                <span style="font-size: 0.58rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Avg Hold</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem;">
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">🔍 Catalyst Context</span>
+              <span style="padding: 0.25rem 0.5rem; border-radius: 999px; background: rgba(0,230,118,0.12); border: 1px solid rgba(0,230,118,0.25); color: var(--green); font-size: 0.62rem; font-weight: 800;">85/100</span>
+            </div>
+            <div style="padding: 0.75rem; background: rgba(0,230,118,0.05); border: 1px solid rgba(0,230,118,0.15); border-radius: 8px; font-size: 0.72rem; line-height: 1.5; color: var(--text-secondary);">
+              Top BTC catalyst scored 92/100 from Insights coverage. Strong institutional interest with positive macro sentiment driving momentum.
+            </div>
+            <div style="margin-top: 0.5rem; font-size: 0.68rem; color: var(--text-tertiary);">
+              3 Headlines · SoSoValue Research
+            </div>
+          </div>
+
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">📋 Execution Playbook</span>
+              <span style="padding: 0.25rem 0.5rem; border-radius: 999px; background: rgba(0,229,255,0.12); border: 1px solid rgba(0,229,255,0.25); color: var(--cyan); font-size: 0.62rem; font-weight: 800;">Active</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 6px; font-size: 0.68rem;">
+                <strong style="color: var(--text);">Entry Strategy</strong>
+                <div style="color: var(--text-tertiary); margin-top: 0.2rem;">Scale in at $79.7K-$79.9K zone</div>
+              </div>
+              <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 6px; font-size: 0.68rem;">
+                <strong style="color: var(--text);">Risk Management</strong>
+                <div style="color: var(--text-tertiary); margin-top: 0.2rem;">Stop loss at $78.4K, R/R ratio 2.3x</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem;">
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">⚡ System Pulse</span>
+              <span style="font-size: 0.7rem; color: var(--green);">Optimal</span>
+            </div>
+            <div class="info-row"><span>Signal Latency</span><strong style="color: var(--green);">12ms</strong></div>
+            <div class="info-row"><span>Model Accuracy</span><strong style="color: var(--green);">87.3%</strong></div>
+            <div class="info-row"><span>Data Freshness</span><strong style="color: var(--cyan);">Live</strong></div>
+            <div class="info-row"><span>System Load</span><strong style="color: var(--green);">Normal</strong></div>
+          </div>
+
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">🌐 Macro Regime</span>
+              <span style="padding: 0.25rem 0.5rem; border-radius: 999px; background: rgba(255,215,79,0.12); border: 1px solid rgba(255,215,79,0.25); color: var(--yellow); font-size: 0.62rem; font-weight: 800;">NEUTRAL</span>
+            </div>
+            <div style="padding: 0.75rem; background: rgba(255,215,79,0.05); border: 1px solid rgba(255,215,79,0.15); border-radius: 8px; font-size: 0.72rem; line-height: 1.5; color: var(--text-secondary);">
+              Market in consolidation phase. Fed policy awaited. Moderate volatility expected with bias toward range-bound trading.
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-decision-bottom">
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">Market Data</span>
+              <span style="font-size: 0.7rem; color: var(--green);">LIVE</span>
+            </div>
+            <div class="info-row"><span>24h Volume</span><strong>$103B</strong></div>
+            <div class="info-row"><span>Market Cap</span><strong>$2.7T</strong></div>
+            <div class="info-row"><span>BTC Dominance</span><strong>58.4%</strong></div>
+            <div class="info-row"><span>24h Cap Change</span><strong style="color: var(--green);">+0.9%</strong></div>
+          </div>
+
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">Execution Readiness</span>
+              <span style="font-size: 0.7rem; color: var(--text-tertiary);">PREVIEW</span>
+            </div>
+            <div class="info-row"><span>Signal Check</span><strong style="color: var(--text-tertiary);">Preview</strong></div>
+            <div class="info-row"><span>Execution</span><strong style="color: var(--yellow);">Preview</strong></div>
+            <div class="info-row"><span>Confirm</span><strong style="color: var(--green);">Cleared</strong></div>
+            <div class="info-row"><span>Volatility</span><strong style="color: var(--green);">Low</strong></div>
+          </div>
+
+          <div class="decision-card-compact">
+            <div class="decision-header-compact">
+              <span class="insight-title" style="margin: 0;">Price Levels</span>
+              <span style="font-size: 0.7rem; color: var(--cyan);">BTC/USDT</span>
+            </div>
+            <div class="info-row"><span>Current Price</span><strong style="color: var(--cyan);">$79,836</strong></div>
+            <div class="info-row"><span>24h High</span><strong>$80,687</strong></div>
+            <div class="info-row"><span>24h Low</span><strong>$78,760</strong></div>
+            <div class="info-row"><span>24h Change</span><strong style="color: var(--red);">-2.2%</strong></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <div class="wallet-card">
+        <strong>Execution Access</strong><br>
+        Wallet ready · Polygon Amoy Testnet · No wallet<br>
+        Balance: <strong>10,000 atUSDT preview</strong> · Est. fee: ~0.003 MATIC
+      </div>
+
+      <div style="padding: 0.7rem; background: rgba(155,92,255,0.1); border: 1px solid rgba(155,92,255,0.35); border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="font-size: 0.75rem; color: #fff;">SoDEX Testnet</strong>
+          <span style="padding: 0.25rem 0.5rem; border-radius: 999px; background: rgba(255,215,79,0.12); border: 1px solid rgba(255,215,79,0.25); color: var(--yellow); font-size: 0.62rem; font-weight: 800;">Preview</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; font-size: 0.68rem;">
+          <div><span style="color: var(--text-tertiary);">Route</span><br><strong style="color: var(--text-tertiary);">Preview only</strong></div>
+          <div><span style="color: var(--text-tertiary);">Market</span><br><strong>SPOT</strong></div>
+          <div><span style="color: var(--text-tertiary);">Account</span><br><strong>Not set</strong></div>
+        </div>
+      </div>
+
+      <div style="padding: 0.7rem; background: linear-gradient(135deg, rgba(0,230,118,0.08), rgba(0,229,255,0.06)); border: 1px solid rgba(0,230,118,0.3); border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="font-size: 0.75rem; color: #fff;">SSI</strong>
+          <span style="padding: 0.25rem 0.5rem; border-radius: 999px; background: rgba(0,230,118,0.12); border: 1px solid rgba(0,230,118,0.25); color: var(--green); font-size: 0.62rem; font-weight: 800;">Preview</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; font-size: 0.68rem;">
+          <div><span style="color: var(--text-tertiary);">Tier</span><br><strong>Preview</strong></div>
+          <div><span style="color: var(--text-tertiary);">Score</span><br><strong>--</strong></div>
+          <div><span style="color: var(--text-tertiary);">APR</span><br><strong>--</strong></div>
+        </div>
+      </div>
+
+      <div class="ai-lock">
+        <div class="ai-lock-header">
+          <div class="ai-lock-icon">🧠</div>
+          <div class="ai-lock-info">
+            <strong>AI Recommendation Locked</strong>
+            <p>Trade based on AI signal. Cannot be changed manually.</p>
+          </div>
+        </div>
+        <div class="ai-lock-grid">
+          <div class="ai-lock-item">
+            <div class="ai-lock-label">Symbol</div>
+            <div class="ai-lock-value">BTC</div>
+          </div>
+          <div class="ai-lock-item">
+            <div class="ai-lock-label">Action</div>
+            <div class="ai-lock-value" style="color: var(--green);">BUY</div>
+          </div>
+          <div class="ai-lock-item">
+            <div class="ai-lock-label">Confidence</div>
+            <div class="ai-lock-value" style="color: var(--green);">74%</div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-execute-hero">
+        ⚡ EXECUTE AI TRADE
+        <small>Connect wallet to continue</small>
+      </button>
+
+      <div>
+        <label style="font-size: 0.7rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 0.5rem; display: block;">Execution Amount (atUSDT)</label>
+        <div style="display: flex; align-items: center; background: var(--deep); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: border-color 0.2s;">
+          <input type="text" value="1,000" style="flex: 1; padding: 1rem; background: transparent; border: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 1.2rem; font-weight: 700;" />
+          <button style="padding: 0.4rem 0.75rem; margin-right: 0.5rem; background: var(--elevated); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s;">MAX</button>
+          <span style="padding: 0 1rem; color: var(--text-tertiary); font-size: 0.85rem; font-weight: 800; border-left: 1px solid var(--border);">atUSDT</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+          <button style="padding: 0.5rem; background: var(--elevated); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s;">25%</button>
+          <button style="padding: 0.5rem; background: var(--elevated); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s;">50%</button>
+          <button style="padding: 0.5rem; background: var(--elevated); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s;">75%</button>
+          <button style="padding: 0.5rem; background: var(--purple); border: 1px solid var(--purple); color: #fff; border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer;">100%</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-tertiary); margin-top: 0.5rem; gap: 0.5rem;">
+          <div style="display: flex; gap: 1rem;">
+            <span>Available: <strong style="color: var(--text);">10,000</strong></span>
+            <span>Minimum: <strong style="color: var(--text);">1</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 1rem;">
+        <div style="padding: 1rem; background: var(--elevated); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+          <div style="font-size: 0.65rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 0.4rem;">You Allocate</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; font-weight: 800;">1,000 atUSDT</div>
+        </div>
+        <div style="padding: 1rem; background: var(--elevated); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+          <div style="font-size: 0.65rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 0.4rem;">Execution Price</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; font-weight: 800; color: var(--cyan);">$79,783</div>
+        </div>
+        <div style="padding: 1rem; background: var(--elevated); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+          <div style="font-size: 0.65rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 0.4rem;">Take Profit</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; font-weight: 800; color: var(--green);">$82,897</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 0.75rem; padding: 0.85rem; background: var(--deep); border: 1px solid var(--border); border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 0.65rem;">
+          <span style="font-size: 0.75rem; font-weight: 900; text-transform: uppercase; color: var(--text-secondary);">Contract Preview</span>
+          <span style="font-size: 0.75rem; font-weight: 800; color: var(--green);">Ready</span>
+        </div>
+        <div style="padding: 0.75rem; background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.2); border-radius: 10px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--cyan); margin-bottom: 0.75rem; word-break: break-word;">
+          0xA2E0F4A542b700f437c27Ce28B31499023d9a53A
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+          <div style="padding: 0.45rem; background: rgba(0,230,118,0.06); border: 1px solid rgba(0,230,118,0.25); border-radius: 6px; font-size: 0.68rem; color: #bfffdc; text-align: center;">
+            ✓ Signal OK
+          </div>
+          <div style="padding: 0.45rem; background: rgba(0,230,118,0.06); border: 1px solid rgba(0,230,118,0.25); border-radius: 6px; font-size: 0.68rem; color: #bfffdc; text-align: center;">
+            ✓ Validated
+          </div>
+          <div style="padding: 0.45rem; background: rgba(0,230,118,0.06); border: 1px solid rgba(0,230,118,0.25); border-radius: 6px; font-size: 0.68rem; color: #bfffdc; text-align: center;">
+            ✓ Ready
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 0.75rem; padding: 0.85rem; background: var(--deep); border: 1px solid var(--border); border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
+          <span style="font-size: 0.75rem; font-weight: 900; text-transform: uppercase; color: var(--text-secondary);">Execution Steps</span>
+          <span style="font-size: 0.75rem; font-weight: 800; color: var(--green);">Pre-check OK</span>
+        </div>
+        <div style="padding: 0.5rem 0;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 0.4rem 0; color: var(--text-tertiary);">
+            <span>Oracle Check</span>
+            <strong style="color: var(--green); font-family: 'JetBrains Mono', monospace; font-weight: 700;">OK</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 0.4rem 0; color: var(--text-tertiary);">
+            <span>Contract Validation</span>
+            <strong style="color: var(--green); font-family: 'JetBrains Mono', monospace; font-weight: 700;">PASS</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 0.4rem 0; color: var(--text-tertiary);">
+            <span>Execution Route</span>
+            <strong style="color: var(--yellow); font-family: 'JetBrains Mono', monospace; font-weight: 700;">PREVIEW</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 0.4rem 0; color: var(--text-tertiary);">
+            <span>Settlement</span>
+            <strong style="color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 700;">PENDING</strong>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.75rem;">
+          <div style="padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+            <div style="font-size: 1.35rem; font-weight: 900; color: var(--text-tertiary); margin-bottom: 0.25rem;">1</div>
+            <div style="font-size: 0.62rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Validate</div>
+          </div>
+          <div style="padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+            <div style="font-size: 1.35rem; font-weight: 900; color: var(--text-tertiary); margin-bottom: 0.25rem;">2</div>
+            <div style="font-size: 0.62rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Execute</div>
+          </div>
+          <div style="padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+            <div style="font-size: 1.35rem; font-weight: 900; color: var(--text-tertiary); margin-bottom: 0.25rem;">3</div>
+            <div style="font-size: 0.62rem; font-weight: 900; text-transform: uppercase; color: var(--text-tertiary);">Settle</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <footer class="footer">
+      <div class="footer-tabs">
+        <button class="footer-tab active">Trade History</button>
+        <button class="footer-tab">Active Positions</button>
+        <button class="footer-tab">Queued Actions</button>
+      </div>
+      <div style="padding: 0.85rem; overflow: auto;">
+        <div class="table-row header">
+          <span>Time</span><span>Asset</span><span>Type</span><span>Amount</span>
+          <span>Price</span><span>PnL</span><span>Status</span><span>Ref</span>
+        </div>
+        <div class="table-row">
+          <span>06:27:34</span><span>BTC</span><span style="color: var(--red);">SELL</span><span>1,052</span>
+          <span>$42,995</span><span style="color: var(--red);">-63.9%</span>
+          <span style="color: var(--red);">Preview</span><span style="color: var(--purple);">TBD_13</span>
+        </div>
+        <div class="table-row">
+          <span>01:33:18</span><span>ETH</span><span style="color: var(--red);">SELL</span><span>868</span>
+          <span>$3,189</span><span style="color: var(--red);">-35.1%</span>
+          <span style="color: var(--red);">Preview</span><span style="color: var(--purple);">TBD_12</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

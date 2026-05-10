@@ -387,6 +387,43 @@ class SoSoValueService:
             )
         return rationale
 
+    def _calculate_sentiment(self, catalyst_score: float, macro_regime: str) -> Dict[str, Any]:
+        """Calculate overall sentiment from catalyst score and macro regime."""
+        # Base sentiment from catalyst score
+        if catalyst_score >= 65:
+            sentiment_label = "BULLISH"
+            sentiment_score = round(70 + (catalyst_score - 65) * 1.2, 1)
+        elif catalyst_score >= 45:
+            sentiment_label = "NEUTRAL"
+            sentiment_score = round(40 + (catalyst_score - 45) * 1.5, 1)
+        else:
+            sentiment_label = "BEARISH"
+            sentiment_score = round(20 + (catalyst_score * 0.5), 1)
+
+        # Adjust based on macro regime
+        macro_adjustment = {
+            "BULLISH": 10,
+            "NEUTRAL": 0,
+            "DEFENSIVE": -10,
+            "UNAVAILABLE": 0,
+        }.get(macro_regime, 0)
+
+        sentiment_score = max(0, min(round(sentiment_score + macro_adjustment, 1), 100))
+
+        # Re-evaluate label after macro adjustment
+        if sentiment_score >= 60:
+            sentiment_label = "BULLISH"
+        elif sentiment_score <= 35:
+            sentiment_label = "BEARISH"
+        else:
+            sentiment_label = "NEUTRAL"
+
+        return {
+            "label": sentiment_label,
+            "score": sentiment_score,
+            "description": f"Based on catalyst score of {catalyst_score} and macro regime of {macro_regime}",
+        }
+
     def get_research_context(self, symbol: str, news_limit: int = 5) -> Dict[str, Any]:
         symbol = symbol.upper().strip()
         currency = self.resolve_currency(symbol)
@@ -420,12 +457,15 @@ class SoSoValueService:
 
         catalyst_score = max(0, min(round(average_importance + macro_bonus, 2), 100))
 
+        sentiment = self._calculate_sentiment(catalyst_score, macro_context["overall_regime"])
+
         return {
             "symbol": symbol,
             "currency": currency,
             "news_count": len(articles),
             "catalyst_score": catalyst_score,
             "catalyst_label": self._score_label(catalyst_score),
+            "sentiment": sentiment,
             "rationale": self._build_research_rationale(symbol, articles, macro_context),
             "latest_news": articles,
             "macro_context": macro_context,

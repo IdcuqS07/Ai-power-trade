@@ -55,6 +55,46 @@ function normalizeWalletNetworkConfig(networkConfig) {
   };
 }
 
+function encodeErc20BalanceOf(address) {
+  const normalizedAddress = String(address || '').trim().replace(/^0x/i, '').toLowerCase();
+
+  if (!/^[0-9a-f]{40}$/.test(normalizedAddress)) {
+    throw new Error('Wallet address is invalid');
+  }
+
+  return `0x70a08231${normalizedAddress.padStart(64, '0')}`;
+}
+
+function parseTokenAmountFromHex(rawValue, decimals = 18) {
+  const normalizedValue = String(rawValue || '0x0').trim();
+  const baseDecimals = Math.max(0, Math.trunc(Number(decimals) || 0));
+  const integerValue = normalizedValue.startsWith('0x') ? BigInt(normalizedValue) : BigInt(`0x${normalizedValue}`);
+
+  if (integerValue === 0n) {
+    return 0;
+  }
+
+  if (baseDecimals === 0) {
+    return Number(integerValue.toString());
+  }
+
+  const unit = 10n ** BigInt(baseDecimals);
+  const whole = integerValue / unit;
+  const fraction = integerValue % unit;
+
+  if (fraction === 0n) {
+    return Number(whole.toString());
+  }
+
+  const fractionText = fraction
+    .toString()
+    .padStart(baseDecimals, '0')
+    .replace(/0+$/, '')
+    .slice(0, 6);
+
+  return Number(`${whole.toString()}.${fractionText || '0'}`);
+}
+
 function createInitialWalletState() {
   return {
     initializing: true,
@@ -64,6 +104,9 @@ function createInitialWalletState() {
     account: null,
     chainId: null,
     tokenBalance: null,
+    tokenBalanceStatus: 'idle',
+    tokenBalanceSource: null,
+    tokenBalanceError: '',
     canClaim: false,
     cooldownSeconds: 0,
     ssiProfile: null,
@@ -211,11 +254,73 @@ export function WalletProvider({ children }) {
       safeSetWalletState((current) => ({
         ...current,
         tokenBalance: null,
+        tokenBalanceStatus: 'idle',
+        tokenBalanceSource: null,
+        tokenBalanceError: '',
         canClaim: false,
         cooldownSeconds: 0,
       }));
       return null;
     }
+
+    safeSetWalletState((current) => ({
+      ...current,
+      tokenBalanceStatus: current.tokenBalance == null ? 'loading' : current.tokenBalanceStatus,
+      tokenBalanceError: '',
+    }));
+
+    const readBalanceFromWalletProvider = async () => {
+      const provider = readProvider();
+      const contractAddress = walletState.tokenMeta?.contractAddress;
+      const decimals = walletState.tokenMeta?.decimals ?? 18;
+      const targetChainId = normalizeChainId(walletState.networkConfig?.chainId);
+
+      if (!provider || !contractAddress) {
+        return null;
+      }
+
+      if (targetChainId) {
+        const providerChainId = normalizeChainId(await provider.request({ method: 'eth_chainId' }));
+
+        if (providerChainId && providerChainId !== targetChainId) {
+          return null;
+        }
+      }
+
+      const balanceHex = await provider.request({
+        method: 'eth_call',
+        params: [
+          {
+            to: contractAddress,
+            data: encodeErc20BalanceOf(nextAddress),
+          },
+          'latest',
+        ],
+      });
+      const balance = parseTokenAmountFromHex(balanceHex, decimals);
+
+      if (!Number.isFinite(balance)) {
+        return null;
+      }
+
+      safeSetWalletState((current) => ({
+        ...current,
+        tokenBalance: balance,
+        tokenBalanceStatus: 'ready',
+        tokenBalanceSource: 'wallet-rpc',
+        tokenBalanceError: '',
+        canClaim: false,
+        cooldownSeconds: 0,
+      }));
+
+      return {
+        address: nextAddress,
+        balance,
+        can_claim_faucet: false,
+        cooldown_seconds: 0,
+        source: 'wallet-rpc',
+      };
+    };
 
     try {
       console.log('[WalletContext] Fetching balance for:', nextAddress);
@@ -226,6 +331,9 @@ export function WalletProvider({ children }) {
       safeSetWalletState((current) => ({
         ...current,
         tokenBalance: Number(data.balance || 0),
+        tokenBalanceStatus: 'ready',
+        tokenBalanceSource: 'backend',
+        tokenBalanceError: '',
         canClaim: Boolean(data.can_claim_faucet),
         cooldownSeconds: Number(data.cooldown_seconds || 0),
       }));
@@ -234,15 +342,23 @@ export function WalletProvider({ children }) {
       return data;
     } catch (error) {
       console.error('[WalletContext] Balance fetch failed:', error);
-      
-      // Set balance to null on error (don't use native balance as fallback)
+
+      try {
+        return await readBalanceFromWalletProvider();
+      } catch (providerError) {
+        console.error('[WalletContext] Wallet RPC balance fallback failed:', providerError);
+      }
+
       safeSetWalletState((current) => ({
         ...current,
         tokenBalance: null,
+        tokenBalanceStatus: 'error',
+        tokenBalanceSource: null,
+        tokenBalanceError: error.message || 'Unable to read live token balance',
         canClaim: false,
         cooldownSeconds: 0,
       }));
-      
+
       return null;
     }
   };
@@ -294,6 +410,9 @@ export function WalletProvider({ children }) {
         account: null,
         chainId: null,
         tokenBalance: null,
+        tokenBalanceStatus: 'idle',
+        tokenBalanceSource: null,
+        tokenBalanceError: '',
         canClaim: false,
         cooldownSeconds: 0,
       }));
@@ -354,6 +473,9 @@ export function WalletProvider({ children }) {
       safeSetWalletState((current) => ({
         ...current,
         tokenBalance: null,
+        tokenBalanceStatus: 'idle',
+        tokenBalanceSource: null,
+        tokenBalanceError: '',
         canClaim: false,
         cooldownSeconds: 0,
         ssiProfile: null,
@@ -570,6 +692,9 @@ export function WalletProvider({ children }) {
       message: 'Wallet disconnected',
       account: null,
       tokenBalance: null,
+      tokenBalanceStatus: 'idle',
+      tokenBalanceSource: null,
+      tokenBalanceError: '',
       canClaim: false,
       cooldownSeconds: 0,
     }));

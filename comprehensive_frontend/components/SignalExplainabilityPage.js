@@ -4,10 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 
 import { formatUsd } from '../lib/formatters';
-import { assetLookup, researchFeed } from '../lib/premiumData';
+import { aiSignals, assetLookup, mergeSignalsWithLivePrices, researchFeed } from '../lib/premiumData';
 import { shortenAddress } from '../lib/walletNetwork';
 import { useWallet } from '../contexts/WalletContext';
-import { useMarketPulse } from '../hooks/useMarketPulse';
 import { cache } from '../utils/cache';
 import dashboardStyles from '../styles/ai-power-trade-dashboard.module.css';
 import styles from '../styles/ai-power-trade-explainer.module.css';
@@ -181,6 +180,33 @@ function fetchJson(path, options = {}) {
   });
 }
 
+function fetchExplainabilityBundle(symbol, options = {}) {
+  const params = new URLSearchParams({
+    news_limit: '3',
+    candle_limit: '24',
+    candle_interval: '1h',
+  });
+
+  if (options.forceRefresh) {
+    params.set('force_refresh', 'true');
+  }
+
+  return fetchJson(`/api/backend/ai/explainability/${encodeURIComponent(symbol)}?${params.toString()}`, {
+    signal: options.signal,
+  });
+}
+
+function fetchSymbolPerformance(symbol, options = {}) {
+  const params = new URLSearchParams({
+    symbol: String(symbol || '').toUpperCase(),
+    limit: '120',
+  });
+
+  return fetchJson(`/api/backend/trades/performance?${params.toString()}`, {
+    signal: options.signal,
+  });
+}
+
 function getWalletPresentation(wallet) {
   const balanceLabel =
     typeof wallet.tokenBalance === 'number'
@@ -349,6 +375,60 @@ function formatUpdateTime(timestamp) {
   });
 }
 
+function formatRelativeTime(timestamp) {
+  if (!timestamp) {
+    return 'Awaiting update';
+  }
+
+  const value = new Date(timestamp).getTime();
+
+  if (!Number.isFinite(value)) {
+    return 'Awaiting update';
+  }
+
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+
+  if (deltaSeconds < 60) {
+    return 'Just now';
+  }
+
+  const deltaMinutes = Math.floor(deltaSeconds / 60);
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes}m ago`;
+  }
+
+  const deltaHours = Math.floor(deltaMinutes / 60);
+
+  if (deltaHours < 24) {
+    return `${deltaHours}h ago`;
+  }
+
+  return `${Math.floor(deltaHours / 24)}d ago`;
+}
+
+function formatRefreshWindow(seconds) {
+  const totalSeconds = Math.max(0, Math.ceil(Number(seconds || 0)));
+
+  if (!totalSeconds) {
+    return 'now';
+  }
+
+  const totalMinutes = Math.ceil(totalSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours && minutes) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (hours) {
+    return `${hours}h`;
+  }
+
+  return `${totalMinutes}m`;
+}
+
 function formatCompactCount(value) {
   const amount = Number(value || 0);
 
@@ -434,6 +514,88 @@ function deriveConfidenceLabel(confidence) {
   return 'Explainability Only';
 }
 
+function deriveHoldWindow(explain, fallbackHorizon = '12-36h', marketChange = 0) {
+  const volatility = Number(explain?.indicators?.volatility || 0);
+  const confidence = Number(explain?.combined_confidence ?? explain?.confidence ?? 0);
+  const absoluteMove = Math.abs(Number(marketChange || 0));
+
+  if (volatility >= 0.05 || absoluteMove >= 5) {
+    return '4-12h';
+  }
+
+  if (volatility >= 0.03 || confidence >= 0.82) {
+    return '8-24h';
+  }
+
+  if (volatility >= 0.018) {
+    return '12-36h';
+  }
+
+  return fallbackHorizon || '24-48h';
+}
+
+function getPatternConfirmationPercent(explain) {
+  const buyScore = Number(explain?.buy_score || 0);
+  const sellScore = Number(explain?.sell_score || 0);
+  const totalScore = buyScore + sellScore;
+
+  if (totalScore <= 0) {
+    return 50;
+  }
+
+  const bullishBias = buyScore >= sellScore;
+  const indicators = explain?.indicators || {};
+  const maAligned = bullishBias
+    ? Number(indicators.ma_5 || 0) >= Number(indicators.ma_20 || 0)
+    : Number(indicators.ma_5 || 0) <= Number(indicators.ma_20 || 0);
+  const macdAligned = bullishBias
+    ? Number(indicators.macd || 0) >= 0
+    : Number(indicators.macd || 0) <= 0;
+
+  return clamp(
+    Math.round((Math.max(buyScore, sellScore) / totalScore) * 70 + (maAligned ? 15 : 6) + (macdAligned ? 15 : 6)),
+    0,
+    100
+  );
+}
+
+function getSentimentSupportPercent(recommendation, sentimentUp, marketChange = 0) {
+  const sentimentValue = Number(sentimentUp);
+
+  if (Number.isFinite(sentimentValue) && sentimentValue > 0) {
+    if (recommendation === 'SELL') {
+      return clamp(Math.round(100 - sentimentValue), 0, 100);
+    }
+
+    if (recommendation === 'HOLD') {
+      return clamp(Math.round(100 - Math.abs(sentimentValue - 50) * 2), 0, 100);
+    }
+
+    return clamp(Math.round(sentimentValue), 0, 100);
+  }
+
+  const changeBias = Number(marketChange || 0) * (recommendation === 'SELL' ? -6 : recommendation === 'HOLD' ? 2 : 6);
+  return clamp(Math.round(50 + changeBias), 0, 100);
+}
+
+function formatPnlStat(performance) {
+  const totalProfit = Number(performance?.total_profit || 0);
+  const totalVolume = Number(performance?.total_volume || 0);
+
+  if (Number.isFinite(totalProfit) && Number.isFinite(totalVolume) && totalVolume > 0) {
+    const percent = (totalProfit / totalVolume) * 100;
+    return {
+      label: `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`,
+      positive: percent >= 0,
+    };
+  }
+
+  return {
+    label: `${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(1)} atUSDT`,
+    positive: totalProfit >= 0,
+  };
+}
+
 function deriveRegimeLabel(explain) {
   if (!explain) {
     return 'Live Explainability';
@@ -455,6 +617,175 @@ function deriveRegimeLabel(explain) {
   }
 
   return 'Balanced Flow';
+}
+
+function buildLiveSignalProfile({
+  symbol,
+  curatedSignal,
+  explain,
+  marketSnapshot,
+  research,
+  sentiment,
+  news,
+  performance,
+  llm,
+}) {
+  if (!explain) {
+    return null;
+  }
+
+  const fallbackMeta = EXPLAINER_ASSET_META[symbol] || { name: symbol, icon: symbol.slice(0, 1) };
+  const baseSignal = curatedSignal || assetLookup[symbol] || null;
+
+  // CRITICAL: Use baseSignal.price (live from useMarketPulse) as the primary source
+  // If baseSignal.price is not available, use marketSnapshot.price as fallback
+  const basePrice = Number(baseSignal?.price || marketSnapshot?.price || 0);
+  const hasLivePrice = basePrice > 0;
+
+  // For calculations only (entry, stop, target) - use fallback chain if no live price
+  const calculationPrice = hasLivePrice ? basePrice : Number(
+    explain?.indicators?.current_price ??
+    fallbackMeta.basePrice ??
+    0
+  );
+
+  console.log('[buildLiveSignalProfile] Price strategy:', {
+    symbol,
+    baseSignalPrice: baseSignal?.price,
+    marketSnapshotPrice: marketSnapshot?.price,
+    basePrice,
+    hasLivePrice,
+    calculationPrice,
+    willReturnPrice: basePrice, // This is what gets returned as signal.price
+    source: baseSignal?.price ? 'baseSignal.price (LIVE from useMarketPulse) ✅' :
+            marketSnapshot?.price ? 'marketSnapshot.price (LIVE from marketOverlay) ✅' :
+            'fallback chain ❌'
+  });
+  const change24h = Number(marketSnapshot?.change_24h ?? baseSignal?.change24h ?? fallbackMeta.baseChange ?? 0);
+  const recommendation = getRecommendationSignal(explain, baseSignal?.signal || '');
+  const confidence = clamp(Number(explain?.combined_confidence ?? explain?.confidence ?? baseSignal?.confidence ?? 0.5), 0.35, 0.95);
+  const riskScore = clamp(Math.round(Number(explain?.risk_score ?? baseSignal?.riskScore ?? 50)), 0, 100);
+  const volatility = Math.max(Number(explain?.indicators?.volatility || 0), 0.008);
+  const moveUnit = calculationPrice ? calculationPrice * volatility : 0;
+  const isSell = recommendation === 'SELL';
+  const isHold = recommendation === 'HOLD';
+  const entryLow = calculationPrice ? calculationPrice + (isSell ? moveUnit * 0.15 : -moveUnit * 0.2) : 0;
+  const entryHigh = calculationPrice ? calculationPrice + (isSell ? moveUnit * 0.45 : moveUnit * 0.15) : 0;
+  const stopPrice = calculationPrice ? calculationPrice + (isSell ? moveUnit * 1.15 : -moveUnit * 1.15) : 0;
+  const targetPrimary = calculationPrice ? calculationPrice + (isSell ? -moveUnit * 1.6 : moveUnit * 1.6) : 0;
+  const targetSecondary = calculationPrice ? calculationPrice + (isSell ? -moveUnit * 2.4 : moveUnit * 2.4) : 0;
+  const rewardDistance = Math.abs(targetPrimary - calculationPrice);
+  const riskDistance = Math.max(0.000001, Math.abs(calculationPrice - stopPrice));
+  const rewardRisk = rewardDistance && riskDistance ? rewardDistance / riskDistance : 1;
+  const reasoning = Array.isArray(explain?.reasoning) ? explain.reasoning : [];
+  const researchArticles = Array.isArray(research?.latest_news) ? research.latest_news : [];
+  const newsArticles = Array.isArray(news?.articles) ? news.articles : [];
+  const totalPnlStat = formatPnlStat(performance);
+  const catalysts = Array.from(
+    new Map(
+      [...researchArticles, ...newsArticles].map((item) => [
+        item.title,
+        {
+          title: item.title,
+          impact: item.category_label || research?.catalyst_label || item.source || 'Research',
+          detail: item.summary || item.source_link || 'Recent live research context.',
+        },
+      ])
+    ).values()
+  )
+    .slice(0, 3);
+  const confidenceDrivers = reasoning.slice(0, 4).map((item) => ({
+    label: item.indicator,
+    weight: clamp(Math.round(Math.abs(Number(item.impact || 0)) * 14 + 10), 8, 32),
+    detail: item.explanation,
+  }));
+  const orderFlow = [];
+
+  if (sentiment?.sentiment_up) {
+    orderFlow.push({
+      venue: 'Community sentiment',
+      bias: getSentimentLabel(sentiment.sentiment_up),
+      value: `${Math.round(Number(sentiment.sentiment_up || 0))}% up`,
+    });
+  }
+
+  if (performance?.total_volume) {
+    orderFlow.push({
+      venue: 'Trade volume',
+      bias: 'History',
+      value: formatCompactUsd(performance.total_volume),
+    });
+  }
+
+  if (newsArticles[0]) {
+    orderFlow.push({
+      venue: newsArticles[0].source || 'Latest headline',
+      bias: newsArticles[0].category_label || 'News',
+      value: formatRelativeTime(newsArticles[0].published_at),
+    });
+  }
+
+  if (!orderFlow.length && baseSignal?.orderFlow?.length) {
+    orderFlow.push(...baseSignal.orderFlow.slice(0, 3));
+  }
+
+  if (!orderFlow.length) {
+    orderFlow.push(
+      {
+        venue: 'Buy / Sell',
+        bias: recommendation,
+        value: `${Number(explain?.buy_score || 0).toFixed(2)} / ${Number(explain?.sell_score || 0).toFixed(2)}`,
+      },
+      {
+        venue: 'Volatility',
+        bias: riskScore >= 60 ? 'High' : riskScore >= 35 ? 'Moderate' : 'Low',
+        value: `${(volatility * 100).toFixed(2)}%`,
+      }
+    );
+  }
+
+  return {
+    ...baseSignal,
+    symbol,
+    name: baseSignal?.name || fallbackMeta.name || symbol,
+    signal: isSell ? 'Short Bias' : isHold ? 'Watch / Hold' : 'Long Bias',
+    confidence,
+    confidenceLabel: deriveConfidenceLabel(confidence),
+    price: basePrice, // CRITICAL: Use basePrice (live from useMarketPulse), NOT calculationPrice!
+    change24h,
+    horizon: deriveHoldWindow(explain, baseSignal?.horizon, change24h),
+    regime: deriveRegimeLabel(explain),
+    setup:
+      llm?.setup ||
+      llm?.execution_summary ||
+      reasoning[0]?.explanation ||
+      baseSignal?.setup ||
+      `Live ${symbol} model snapshot is active.`,
+    catalystSummary:
+      llm?.market_narrative ||
+      research?.rationale?.[0] ||
+      newsArticles[0]?.summary ||
+      reasoning[1]?.explanation ||
+      baseSignal?.catalystSummary ||
+      `Live ${symbol} signal combines technical structure and market context.`,
+    entryZone:
+      calculationPrice && !isHold
+        ? `${formatUsd(Math.min(entryLow, entryHigh))} - ${formatUsd(Math.max(entryLow, entryHigh))}`
+        : baseSignal?.entryZone || 'Awaiting live entry band',
+    stopLoss: calculationPrice && !isHold ? formatUsd(stopPrice) : baseSignal?.stopLoss || 'Awaiting live invalidation',
+    targetZone:
+      calculationPrice && !isHold
+        ? `${formatUsd(targetPrimary)} / ${formatUsd(targetSecondary)}`
+        : baseSignal?.targetZone || 'Awaiting live target band',
+    rewardRisk: `${Number.isFinite(rewardRisk) ? rewardRisk.toFixed(1) : '1.0'}x`,
+    simulatedEdge: totalPnlStat.label,
+    riskScore,
+    confidenceDrivers: confidenceDrivers.length ? confidenceDrivers : baseSignal?.confidenceDrivers || [],
+    catalysts: catalysts.length ? catalysts : baseSignal?.catalysts || [],
+    orderFlow,
+    chart: baseSignal?.chart || [],
+    liveSnapshot: true,
+  };
 }
 
 function getDemoMarketSnapshot(symbol, marketSnapshot = {}) {
@@ -669,7 +1000,8 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const router = useRouter();
   const wallet = useWallet();
   const walletMenuRef = useRef(null);
-  const { signals } = useMarketPulse();
+  const [signals, setSignals] = useState([]);
+  const [marketLoading, setMarketLoading] = useState(true);
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
   const [intelligence, setIntelligence] = useState({
     explain: null,
@@ -677,6 +1009,8 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     sentiment: null,
     news: null,
     etf: null,
+    llm: null,
+    performance: null,
   });
   const [marketOverlay, setMarketOverlay] = useState({
     prices: {},
@@ -693,9 +1027,24 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     refreshing: false,
     note: null,
   });
+  const [signalRuntime, setSignalRuntime] = useState({
+    message: 'Live signal runtime is syncing...',
+    nextRefreshAt: null,
+    generationAllowed: true,
+    generationLocked: false,
+    signalAvailable: false,
+    generating: false,
+  });
   const [reloadToken, setReloadToken] = useState(0);
   const [marketError, setMarketError] = useState(null);
   const [explainError, setExplainError] = useState(null);
+  const [clockNow, setClockNow] = useState(Date.now());
+
+  const handleForceRefreshPrice = () => {
+    console.log('[Force Refresh] Clearing cache and reloading...');
+    cache.cache.delete(MARKET_CACHE_KEY); // Access internal Map
+    setReloadToken(prev => prev + 1);
+  };
 
   const requestedSymbol = useMemo(() => {
     const querySymbol =
@@ -711,6 +1060,55 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const latestMarketSnapshotRef = useRef(null);
   const latestExplainSnapshotRef = useRef(null);
 
+  // Load live signals from the same endpoint as AI Decision
+  const loadLiveSignals = async () => {
+    try {
+      setMarketLoading(true);
+
+      const response = await fetch(`/api/app/terminal?symbol=${activeSymbol}`);
+
+      if (!response.ok) {
+        throw new Error(`Terminal API returned ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const liveSignals = payload?.data?.signals || [];
+
+      console.log('[AI Explainer] Live signals loaded:', {
+        count: liveSignals.length,
+        symbols: liveSignals.map(s => s.symbol),
+        btcPrice: liveSignals.find(s => s.symbol === 'BTC')?.price
+      });
+
+      setSignals(liveSignals);
+    } catch (error) {
+      console.error('[AI Explainer] Failed to load live signals:', error);
+      // Fallback to aiSignals if fetch fails
+      setSignals(aiSignals);
+    } finally {
+      setMarketLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  // Load live signals on mount and refresh every 15 seconds
+  useEffect(() => {
+    loadLiveSignals();
+
+    const interval = setInterval(loadLiveSignals, 15000);
+
+    return () => clearInterval(interval);
+  }, [activeSymbol]);
+
   useEffect(() => {
     latestMarketSnapshotRef.current = marketOverlay;
   }, [marketOverlay]);
@@ -723,10 +1121,13 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       sentiment: intelligence.sentiment,
       news: intelligence.news,
       etf: intelligence.etf,
+      llm: intelligence.llm,
+      performance: intelligence.performance,
       source: explainStatus.source,
       updatedAt: explainStatus.updatedAt,
+      signalRuntime,
     };
-  }, [activeSymbol, explainStatus.source, explainStatus.updatedAt, intelligence]);
+  }, [activeSymbol, explainStatus.source, explainStatus.updatedAt, intelligence, signalRuntime]);
 
   useEffect(() => {
     let active = true;
@@ -737,6 +1138,14 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       const cached = cache.get(MARKET_CACHE_KEY) || latestMarketSnapshotRef.current;
       const hasCachedSnapshot = Boolean(cached?.updatedAt || Object.keys(cached?.prices || {}).length);
       const hasDemoSnapshot = cached?.source === 'Demo market overlay';
+
+      console.log('[loadMarketOverlay] Cache check:', {
+        hasCachedSnapshot,
+        hasDemoSnapshot,
+        cachedSource: cached?.source,
+        cachedSymbols: Object.keys(cached?.prices || {}),
+        sampleCachedPrice: cached?.prices?.['BTC']?.price
+      });
 
       if (hasCachedSnapshot && active) {
         setMarketOverlay((current) => ({
@@ -763,6 +1172,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       activeController = controller;
 
       try {
+        console.log('[loadMarketOverlay] Fetching from /api/market/prices...');
         const payload = await fetchJson('/api/market/prices', {
           signal: controller.signal,
         });
@@ -780,6 +1190,13 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           note: null,
         };
 
+        console.log('[AI Explainer] Market prices loaded:', {
+          symbols: Object.keys(nextOverlay.prices),
+          count: Object.keys(nextOverlay.prices).length,
+          source: nextOverlay.source,
+          samplePrice: nextOverlay.prices['BTC']?.price
+        });
+
         cache.set(
           MARKET_CACHE_KEY,
           {
@@ -796,6 +1213,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           return;
         }
 
+        console.error('[AI Explainer] Market prices fetch failed:', error);
         setMarketError(error.message || 'Unable to refresh live market overlay');
         setMarketOverlay((current) => {
           const hasCurrentSnapshot = Boolean(current.updatedAt || Object.keys(current.prices || {}).length);
@@ -858,6 +1276,8 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           sentiment: cached.sentiment,
           news: cached.news,
           etf: cached.etf,
+          llm: cached.llm || null,
+          performance: cached.performance || null,
         });
         setExplainStatus({
           source: cached.source || 'Live explainability layer',
@@ -866,6 +1286,13 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           refreshing: true,
           note: `Showing the current cached explainability layer for ${activeSymbol} while live analysis refreshes in the background.`,
         });
+        if (cached.signalRuntime) {
+          setSignalRuntime((current) => ({
+            ...current,
+            ...cached.signalRuntime,
+            generating: false,
+          }));
+        }
       } else if (!hasDemoSnapshot && active) {
         setIntelligence({
           explain: null,
@@ -873,6 +1300,8 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           sentiment: null,
           news: null,
           etf: null,
+          llm: null,
+          performance: null,
         });
         setExplainStatus({
           source: 'Loading explainability layer...',
@@ -881,6 +1310,14 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           refreshing: false,
           note: null,
         });
+        setSignalRuntime({
+          message: `Loading ${activeSymbol} live signal runtime...`,
+          nextRefreshAt: null,
+          generationAllowed: true,
+          generationLocked: false,
+          signalAvailable: false,
+          generating: false,
+        });
       }
 
       activeController?.abort();
@@ -888,57 +1325,69 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       activeController = controller;
 
       const results = await Promise.allSettled([
-        fetchJson(`/api/ai/explain/${activeSymbol}`, {
+        fetchExplainabilityBundle(activeSymbol, {
           signal: controller.signal,
         }),
-        fetchJson(`/api/backend/sosovalue/research-context/${activeSymbol}?news_limit=3`, {
+        fetchSymbolPerformance(activeSymbol, {
           signal: controller.signal,
         }),
-        fetchJson(`/api/backend/ai/market-sentiment/${activeSymbol}`, {
-          signal: controller.signal,
-        }),
-        fetchJson(`/api/backend/sosovalue/news/${activeSymbol}?page_size=3`, {
-          signal: controller.signal,
-        }),
-        fetchJson(
-          `/api/backend/sosovalue/etf-metrics?etf_type=${activeSymbol === 'ETH' ? 'us-eth-spot' : 'us-btc-spot'}`,
-          {
-            signal: controller.signal,
-          }
-        ),
       ]);
 
       if (!active || controller.signal.aborted) {
         return;
       }
 
-      const explainRequestSucceeded = results[0].status === 'fulfilled' && Boolean(results[0].value?.data);
+      const explainBundleSucceeded = results[0].status === 'fulfilled' && Boolean(results[0].value?.data);
+      const explainBundle = results[0].status === 'fulfilled' ? results[0].value || null : null;
+      const bundleData = explainBundle?.data || {};
+      const performancePayload = results[1].status === 'fulfilled' ? results[1].value || null : null;
       const explainErrorMessage =
         results[0].status === 'rejected'
           ? results[0].reason?.message || 'Unable to refresh live explainability layer'
-          : explainRequestSucceeded
+          : explainBundleSucceeded
             ? null
             : 'Unable to refresh live explainability layer';
       const nextExplain =
-        results[0].status === 'fulfilled' ? results[0].value?.data || cached?.explain || null : cached?.explain || null;
-      const nextResearch =
-        results[1].status === 'fulfilled' ? results[1].value?.data || cached?.research || null : cached?.research || null;
+        explainBundleSucceeded ? bundleData.explain || cached?.explain || null : cached?.explain || null;
+      const nextResearch = explainBundleSucceeded ? bundleData.research || cached?.research || null : cached?.research || null;
       const nextSentiment =
-        results[2].status === 'fulfilled'
-          ? results[2].value?.data || cached?.sentiment || null
-          : cached?.sentiment || null;
-      const nextNews =
-        results[3].status === 'fulfilled' ? results[3].value?.data || cached?.news || null : cached?.news || null;
-      const nextEtf =
-        results[4].status === 'fulfilled' ? results[4].value?.data || cached?.etf || null : cached?.etf || null;
-      const nextSource = explainRequestSucceeded
-        ? results[0].value?.source === 'cache'
+        explainBundleSucceeded ? bundleData.sentiment || cached?.sentiment || null : cached?.sentiment || null;
+      const nextNews = explainBundleSucceeded ? bundleData.news || cached?.news || null : cached?.news || null;
+      const nextEtf = explainBundleSucceeded ? bundleData.etf || cached?.etf || null : cached?.etf || null;
+      const nextLlm = explainBundleSucceeded ? bundleData.llm || cached?.llm || null : cached?.llm || null;
+      const nextPerformance =
+        performancePayload?.data || (explainBundleSucceeded ? bundleData.performance || null : null) || cached?.performance || null;
+      const nextSource = explainBundleSucceeded
+        ? explainBundle?.cache_hit
           ? 'Cached explainability layer'
           : 'Live explainability layer'
         : nextExplain
           ? 'Cached explainability layer'
           : cached?.source || 'Demo explainability layer';
-      const nextUpdatedAt = explainRequestSucceeded ? Date.now() : cached?.updatedAt || null;
+      const nextUpdatedAt = explainBundleSucceeded ? Date.now() : cached?.updatedAt || null;
+      const nextRuntime = {
+        message:
+          explainBundle?.message ||
+          (explainBundleSucceeded
+            ? explainBundle?.cache_hit
+              ? `Latest ${activeSymbol} signal snapshot is active.`
+              : `Fresh signal generated. The next manual generation window opens in ${formatRefreshWindow(
+                  explainBundle?.next_refresh_in_seconds
+                )}.`
+            : cached?.signalRuntime?.message || 'Live signal runtime is syncing...'),
+        nextRefreshAt:
+          typeof explainBundle?.next_refresh_in_seconds === 'number'
+            ? Date.now() + Math.max(0, Number(explainBundle.next_refresh_in_seconds || 0)) * 1000
+            : cached?.signalRuntime?.nextRefreshAt || null,
+        generationAllowed: Boolean(
+          explainBundle?.generation_allowed ?? cached?.signalRuntime?.generationAllowed ?? true
+        ),
+        generationLocked: Boolean(
+          explainBundle?.generation_locked ?? cached?.signalRuntime?.generationLocked ?? false
+        ),
+        signalAvailable: Boolean(explainBundle?.signal_available ?? nextExplain),
+        generating: false,
+      };
 
       setIntelligence({
         explain: nextExplain,
@@ -946,19 +1395,22 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
         sentiment: nextSentiment,
         news: nextNews,
         etf: nextEtf,
+        llm: nextLlm,
+        performance: nextPerformance,
       });
       setExplainStatus({
         source: nextSource,
         updatedAt: nextUpdatedAt,
         loading: false,
         refreshing: false,
-        note: explainRequestSucceeded
+        note: explainBundleSucceeded
           ? null
           : nextExplain
             ? `Live explainability is unavailable right now, so the latest ${activeSymbol} review stays visible.`
             : `Live explainability is unavailable right now, so demo explainability is active for ${activeSymbol} until retry.`,
       });
       setExplainError(explainErrorMessage);
+      setSignalRuntime(nextRuntime);
 
       if (nextExplain) {
         cache.set(
@@ -969,8 +1421,11 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
             sentiment: nextSentiment,
             news: nextNews,
             etf: nextEtf,
+            llm: nextLlm,
+            performance: nextPerformance,
             source: nextSource,
             updatedAt: nextUpdatedAt,
+            signalRuntime: nextRuntime,
           },
           60
         );
@@ -993,22 +1448,28 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     };
   }, [activeSymbol, reloadToken]);
 
-  const curatedSignal = useMemo(() => {
-    return signals.find((item) => item.symbol === activeSymbol) || assetLookup[activeSymbol] || null;
-  }, [activeSymbol, signals]);
-
+  // SIMPLE: Just use signals from terminal API (same as AI Decision)
   const signal = useMemo(() => {
-    if (curatedSignal) {
-      return curatedSignal;
+    const found = signals.find((item) => item.symbol === activeSymbol);
+
+    if (found) {
+      console.log('[signal] Using signal from terminal API:', {
+        symbol: found.symbol,
+        price: found.price,
+        name: found.name
+      });
+      return found;
     }
 
-    return buildExplainabilityOnlySignal(activeSymbol, marketOverlay.prices[activeSymbol], intelligence.explain, {
-      marketSource: marketOverlay.source,
-      explainSource: explainStatus.source,
+    // Fallback to first signal or aiSignals
+    const fallback = signals[0] || aiSignals.find(s => s.symbol === activeSymbol) || aiSignals[0];
+    console.log('[signal] Using fallback:', {
+      symbol: fallback?.symbol,
+      price: fallback?.price
     });
-  }, [activeSymbol, curatedSignal, explainStatus.source, intelligence.explain, marketOverlay.prices, marketOverlay.source]);
 
-  const isCuratedSignal = Boolean(curatedSignal);
+    return fallback;
+  }, [activeSymbol, signals]);
 
   const tickerSignals = useMemo(() => {
     if (!signals.length) {
@@ -1020,8 +1481,11 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
 
   const symbolTabs = useMemo(() => {
     return EXPLAINER_SYMBOLS.map((symbolCode) => {
-      const curatedAsset = signals.find((item) => item.symbol === symbolCode) || assetLookup[symbolCode] || null;
-      const marketSnapshot = getDemoMarketSnapshot(symbolCode, marketOverlay.prices[symbolCode] || {});
+      // Priority: signals from terminal API (same as AI Decision)
+      const liveSignal = signals.find((item) => item.symbol === symbolCode);
+      const fallbackSignal = aiSignals.find((item) => item.symbol === symbolCode);
+      const curatedAsset = liveSignal || fallbackSignal || null;
+
       const confidence =
         symbolCode === activeSymbol && intelligence.explain?.confidence
           ? Number(intelligence.explain.confidence)
@@ -1031,16 +1495,21 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
         symbol: symbolCode,
         name: curatedAsset?.name || EXPLAINER_ASSET_META[symbolCode]?.name || symbolCode,
         icon: EXPLAINER_ASSET_META[symbolCode]?.icon || symbolCode.slice(0, 1),
-        price: Number(marketSnapshot.price ?? curatedAsset?.price ?? 0),
-        change24h: Number(marketSnapshot.change_24h ?? curatedAsset?.change24h ?? 0),
+        price: Number(curatedAsset?.price || 0),
+        change24h: Number(curatedAsset?.change24h || 0),
         confidence,
-        isCurated: Boolean(curatedAsset),
+        isCurated: Boolean(liveSignal),
       };
     });
-  }, [activeSymbol, intelligence.explain?.confidence, marketOverlay.prices, signals]);
+  }, [activeSymbol, intelligence.explain?.confidence, signals]);
 
   const confidencePercent = Math.round(
-    clamp(Number((intelligence.explain?.confidence ?? signal.confidence) || 0) * 100, 0, 100)
+    clamp(
+      Number((intelligence.explain?.combined_confidence ?? intelligence.explain?.confidence ?? signal.confidence) || 0) *
+        100,
+      0,
+      100
+    )
   );
   const ringCircumference = 2 * Math.PI * 70;
   const ringOffset = ringCircumference - (confidencePercent / 100) * ringCircumference;
@@ -1081,6 +1550,19 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const recommendation = getRecommendationSignal(explainOverlay, signal.signal);
   const marketPrice = Number(marketOverlay.prices[activeSymbol]?.price ?? signal.price ?? 0);
   const marketChange = Number(marketOverlay.prices[activeSymbol]?.change_24h ?? signal.change24h ?? 0);
+  const hasLivePrice = Boolean(marketOverlay.prices[activeSymbol]?.price);
+  const priceSource = hasLivePrice ? marketOverlay.source : 'Fallback data';
+
+  console.log('[AI Explainer] Price data:', {
+    symbol: activeSymbol,
+    hasLivePrice,
+    marketPrice,
+    marketChange,
+    source: priceSource,
+    overlayStatus: marketOverlay.source,
+    overlayLoading: marketOverlay.loading,
+    overlayRefreshing: marketOverlay.refreshing
+  });
   const sentimentSummary = useMemo(() => {
     const sentimentUp = Number(intelligence.sentiment?.sentiment_up || 0);
 
@@ -1234,9 +1716,18 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       });
     }
 
-    return [...baseItems, ...liveItems].slice(0, 4);
+    // Merge and deduplicate by venue, prioritizing liveItems
+    const venueMap = new Map();
+    [...baseItems, ...liveItems].forEach(item => {
+      if (!venueMap.has(item.venue)) {
+        venueMap.set(item.venue, item);
+      }
+    });
+
+    return Array.from(venueMap.values()).slice(0, 4);
   }, [intelligence.etf, intelligence.sentiment, newsArticles, signal.orderFlow]);
-  const currentPrice = Number(marketPrice || signal.price || explainOverlay?.indicators?.current_price || 0);
+  // Simple: Just use signal.price directly (already merged by useMarketPulse)
+  const currentPrice = Number(signal?.price || 0);
   const macroRegime =
     intelligence.etf?.regime || intelligence.research?.macro_context?.overall_regime || signal.regime;
   const researchLabel =
@@ -1311,8 +1802,75 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     volatilityValue,
   ]);
 
+  const nextRefreshInSeconds = signalRuntime.nextRefreshAt
+    ? Math.max(0, Math.ceil((signalRuntime.nextRefreshAt - clockNow) / 1000))
+    : 0;
+  const scoreBreakdownRows = useMemo(() => {
+    return [
+      {
+        label: 'Signal Forecast',
+        value: confidencePercent,
+      },
+      {
+        label: 'Pattern Confirmation',
+        value: getPatternConfirmationPercent(liveExplain),
+      },
+      {
+        label: 'Market Sentiment',
+        value: getSentimentSupportPercent(
+          recommendation,
+          intelligence.sentiment?.sentiment_up,
+          marketChange
+        ),
+      },
+    ];
+  }, [confidencePercent, intelligence.sentiment?.sentiment_up, liveExplain, marketChange, recommendation]);
+  const pnlStat = useMemo(() => formatPnlStat(intelligence.performance), [intelligence.performance]);
+  const scorecardStats = useMemo(() => {
+    const winRate = Number(
+      intelligence.performance?.win_rate ||
+        ((Number(mlPrediction?.win_probability || 0) || 0) * 100)
+    );
+    const totalTrades = Number(intelligence.performance?.total_trades || 0);
+
+    return [
+      {
+        label: 'Win Rate',
+        value: Number.isFinite(winRate) && winRate > 0 ? `${winRate.toFixed(1)}%` : 'Awaiting',
+        tone: winRate >= 50 ? styles.statValueBullish : styles.statValueMuted,
+      },
+      {
+        label: 'Total PnL',
+        value: pnlStat.label,
+        tone: pnlStat.positive ? styles.statValueBullish : styles.statValueBearish,
+      },
+      {
+        label: 'Trades',
+        value: totalTrades > 0 ? new Intl.NumberFormat('en-US').format(totalTrades) : '0',
+        tone: styles.statValueNeutral,
+      },
+      {
+        label: 'Avg Hold',
+        value: deriveHoldWindow(liveExplain, signal.horizon, marketChange),
+        tone: styles.statValueNeutral,
+      },
+    ];
+  }, [intelligence.performance, liveExplain, marketChange, mlPrediction?.win_probability, pnlStat, signal.horizon]);
+  const generateSignalHeading = signalRuntime.generationAllowed
+    ? `Manual refresh is available ${signalRuntime.signalAvailable ? 'now' : 'for the first snapshot'}`
+    : `Next manual refresh in ${formatRefreshWindow(nextRefreshInSeconds)}`;
+  const generateSignalDetail =
+    signalRuntime.message ||
+    (signalRuntime.generationAllowed
+      ? `Generate a fresh ${activeSymbol} signal snapshot from the live explainability stack.`
+      : `The latest ${activeSymbol} signal snapshot is still inside the 30 minute cooldown window.`);
+
   const confidenceLabel = signal.confidenceLabel || deriveConfidenceLabel(confidencePercent / 100);
-  const assetModeTitle = isCuratedSignal ? 'Curated Signal Pack' : 'Explainability-Only Asset';
+  const assetModeTitle = signal?.liveSnapshot
+    ? 'Live Signal Snapshot'
+    : signal?.symbol
+      ? 'Curated Signal Pack'
+      : 'Explainability-Only Asset';
   const marketSourceLabel = getDataSourceLabel('market', marketOverlay);
   const explainSourceLabel = getDataSourceLabel('explainability', explainStatus);
   const lastAiUpdateValue = explainStatus.loading
@@ -1408,7 +1966,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       {
         label: 'Asset Mode',
         value: assetModeTitle,
-        meta: isCuratedSignal
+        meta: signal?.confidence
           ? 'Full signal pack with curated entries, catalysts, and risk commentary.'
           : 'Live explainability is available even without a curated signal pack.',
       },
@@ -1442,7 +2000,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     explainSourceLabel,
     explainStatus.refreshing,
     hasLiveExplain,
-    isCuratedSignal,
+    signal?.confidence,
     lastAiUpdateValue,
     liveExplain,
     recommendation,
@@ -1491,6 +2049,113 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const handleWalletDisconnect = async () => {
     setWalletMenuOpen(false);
     await wallet.disconnectWallet();
+  };
+
+  const handleGenerateSignal = async () => {
+    const cacheKey = `${EXPLAIN_CACHE_PREFIX}${activeSymbol}`;
+    const cached =
+      cache.get(cacheKey) ||
+      (latestExplainSnapshotRef.current?.symbol === activeSymbol ? latestExplainSnapshotRef.current : null);
+
+    setSignalRuntime((current) => ({
+      ...current,
+      generating: true,
+      message: `Generating a fresh ${activeSymbol} signal snapshot...`,
+    }));
+    setExplainError(null);
+
+    const results = await Promise.allSettled([
+      fetchExplainabilityBundle(activeSymbol, {
+        forceRefresh: true,
+      }),
+      fetchSymbolPerformance(activeSymbol),
+    ]);
+
+    const explainBundleSucceeded = results[0].status === 'fulfilled' && Boolean(results[0].value?.data);
+    const explainBundle = results[0].status === 'fulfilled' ? results[0].value || null : null;
+    const bundleData = explainBundle?.data || {};
+    const performancePayload = results[1].status === 'fulfilled' ? results[1].value || null : null;
+
+    if (!explainBundleSucceeded && !cached?.explain) {
+      const message =
+        results[0].status === 'rejected'
+          ? results[0].reason?.message || 'Unable to generate a fresh signal snapshot.'
+          : 'Unable to generate a fresh signal snapshot.';
+      setExplainError(message);
+      setSignalRuntime((current) => ({
+        ...current,
+        generating: false,
+        message,
+      }));
+      return;
+    }
+
+    const nextExplain = bundleData.explain || cached?.explain || null;
+    const nextResearch = bundleData.research || cached?.research || null;
+    const nextSentiment = bundleData.sentiment || cached?.sentiment || null;
+    const nextNews = bundleData.news || cached?.news || null;
+    const nextEtf = bundleData.etf || cached?.etf || null;
+    const nextLlm = bundleData.llm || cached?.llm || null;
+    const nextPerformance = performancePayload?.data || cached?.performance || null;
+    const nextSource = explainBundle?.cache_hit ? 'Cached explainability layer' : 'Live explainability layer';
+    const nextUpdatedAt = Date.now();
+    const nextRuntime = {
+      message:
+        explainBundle?.message ||
+        (explainBundle?.cache_hit
+          ? `Latest ${activeSymbol} signal snapshot is still active.`
+          : `Fresh signal generated. The next manual generation window opens in ${formatRefreshWindow(
+              explainBundle?.next_refresh_in_seconds
+            )}.`),
+      nextRefreshAt:
+        Date.now() + Math.max(0, Number(explainBundle?.next_refresh_in_seconds || 0)) * 1000,
+      generationAllowed: Boolean(explainBundle?.generation_allowed),
+      generationLocked: Boolean(explainBundle?.generation_locked),
+      signalAvailable: Boolean(explainBundle?.signal_available ?? nextExplain),
+      generating: false,
+    };
+
+    setIntelligence({
+      explain: nextExplain,
+      research: nextResearch,
+      sentiment: nextSentiment,
+      news: nextNews,
+      etf: nextEtf,
+      llm: nextLlm,
+      performance: nextPerformance,
+    });
+    setExplainStatus({
+      source: nextSource,
+      updatedAt: nextUpdatedAt,
+      loading: false,
+      refreshing: false,
+      note: explainBundle?.cache_hit && explainBundle?.generation_locked ? nextRuntime.message : null,
+    });
+    setSignalRuntime(nextRuntime);
+    setExplainError(
+      results[0].status === 'rejected'
+        ? results[0].reason?.message || 'Unable to refresh live explainability layer'
+        : null
+    );
+
+    if (nextExplain) {
+      cache.set(
+        cacheKey,
+        {
+          explain: nextExplain,
+          research: nextResearch,
+          sentiment: nextSentiment,
+          news: nextNews,
+          etf: nextEtf,
+          llm: nextLlm,
+          performance: nextPerformance,
+          source: nextSource,
+          updatedAt: nextUpdatedAt,
+          signalRuntime: nextRuntime,
+        },
+        60
+      );
+    }
   };
 
   const showWalletManagement = wallet.providerAvailable && wallet.isConnected;
@@ -1624,13 +2289,27 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
         <div className={dashboardStyles.tickerStrip}>
           <div className={dashboardStyles.tickerContent}>
             {tickerSignals.map((tickerSignal, index) => {
-              const positive = Number(tickerSignal.change24h || 0) >= 0;
+              const price = Number(
+                tickerSignal.price ||
+                tickerSignal.lastPrice ||
+                tickerSignal.currentPrice ||
+                tickerSignal.markPrice ||
+                0
+              );
+
+              const change = Number(tickerSignal.change24h || 0);
+              const positive = change >= 0;
 
               return (
                 <div className={dashboardStyles.tickerItem} key={`${tickerSignal.symbol}-${index}`}>
                   <span className={dashboardStyles.tickerSymbol}>{tickerSignal.symbol}</span>
                   <span className={dashboardStyles.tickerPrice}>
-                    ${Number(tickerSignal.price || 0).toLocaleString('en-US')}
+                    {price > 0
+                      ? `$${price.toLocaleString('en-US', {
+                          minimumFractionDigits: price < 1 ? 4 : 2,
+                          maximumFractionDigits: price < 1 ? 6 : 2,
+                        })}`
+                      : 'Loading...'}
                   </span>
                   <span
                     className={cx(
@@ -1641,7 +2320,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
                     )}
                   >
                     {positive ? '+' : ''}
-                    {Number(tickerSignal.change24h || 0).toFixed(2)}%
+                    {change.toFixed(2)}%
                   </span>
                 </div>
               );
@@ -1698,14 +2377,16 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
                       {signal.name} <span className={styles.activeAssetSymbol}>{activeSymbol}</span>
                     </div>
                     <div className={styles.activeAssetCaption}>
-                      {isCuratedSignal ? 'Curated signal pack' : 'Explainability-only asset'}
+                      {assetModeTitle}
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className={styles.activeAssetMetric}>
-                <div className={styles.activeAssetLabel}>Price</div>
+                <div className={styles.activeAssetLabel}>
+                  Price {!hasLivePrice && <span style={{ fontSize: '0.7em', opacity: 0.6 }}>(fallback)</span>}
+                </div>
                 <div className={styles.activeAssetMetricValue}>
                   {currentPrice ? formatUsd(currentPrice) : 'Awaiting feed'}
                 </div>
@@ -1747,6 +2428,22 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
                   {explainSourceLabel}
                 </span>
               </div>
+            </div>
+
+            <div className={styles.signalRefreshPanel}>
+              <div className={styles.signalRefreshMeta}>
+                <div className={styles.signalRefreshEyebrow}>Generate Signal</div>
+                <h2 className={styles.signalRefreshHeadline}>{generateSignalHeading}</h2>
+                <p className={styles.signalRefreshText}>{generateSignalDetail}</p>
+              </div>
+              <button
+                type="button"
+                className={styles.signalRefreshButton}
+                onClick={handleGenerateSignal}
+                disabled={signalRuntime.generating}
+              >
+                {signalRuntime.generating ? 'Generating...' : 'Generate Signal'}
+              </button>
             </div>
 
             {runtimeNotice ? (
@@ -1794,33 +2491,29 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
                   </div>
                 </div>
 
-                <div className={styles.metricGrid}>
-                  <div className={cx(styles.metricTile, dashboardStyles.glass)}>
-                    <div className={styles.metricLabel}>Entry Zone</div>
-                    <div className={styles.metricValue}>{signal.entryZone}</div>
-                  </div>
-                  <div className={cx(styles.metricTile, dashboardStyles.glass)}>
-                    <div className={styles.metricLabel}>Target Zone</div>
-                    <div className={styles.metricValue}>{signal.targetZone}</div>
-                  </div>
-                  <div className={cx(styles.metricTile, dashboardStyles.glass)}>
-                    <div className={styles.metricLabel}>Stop Loss</div>
-                    <div className={styles.metricValue}>{signal.stopLoss}</div>
-                  </div>
-                  <div className={cx(styles.metricTile, dashboardStyles.glass)}>
-                    <div className={styles.metricLabel}>Reward / Risk</div>
-                    <div className={styles.metricValue}>{signal.rewardRisk}</div>
-                  </div>
-                </div>
-
-                <div className={styles.technicalGrid}>
-                  {technicalItems.map((item) => (
-                    <div key={item.label} className={cx(styles.technicalTile, dashboardStyles.glass)}>
-                      <div className={styles.technicalLabel}>{item.label}</div>
-                      <div className={styles.technicalValue}>{item.value}</div>
+                <div className={styles.scorecardBreakdown}>
+                  {scoreBreakdownRows.map((item) => (
+                    <div key={item.label} className={styles.scorecardBarRow}>
+                      <div className={styles.scorecardBarHeader}>
+                        <span>{item.label}</span>
+                        <strong>{item.value}%</strong>
+                      </div>
+                      <div className={styles.scorecardBarTrack}>
+                        <div className={styles.scorecardBarFill} style={{ width: `${item.value}%` }} />
+                      </div>
                     </div>
                   ))}
                 </div>
+
+                <div className={styles.scorecardStatsGrid}>
+                  {scorecardStats.map((item) => (
+                    <article key={item.label} className={styles.scorecardStatTile}>
+                      <div className={cx(styles.scorecardStatValue, item.tone)}>{item.value}</div>
+                      <div className={styles.scorecardStatLabel}>{item.label}</div>
+                    </article>
+                  ))}
+                </div>
+
               </div>
             </div>
           </section>
