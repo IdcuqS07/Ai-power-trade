@@ -1,6 +1,8 @@
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
 
 function buildLocalFallback(body = {}, message = 'Trade saved in local preview mode', backendData = {}) {
+  const simulationReady = body?.simulation_mode === 'sodex_simulation_ready';
+
   return {
     success: true,
     trade_id: `SIM-${Date.now()}`,
@@ -13,10 +15,10 @@ function buildLocalFallback(body = {}, message = 'Trade saved in local preview m
       amount: body.amount,
       price: body.price,
       timestamp: new Date().toISOString(),
-      validation_status: 'Preview mode',
-      settlement_status: 'Preview only',
-      execution_mode: 'preview_local',
-      provider_label: 'Local Preview',
+      validation_status: simulationReady ? 'Simulation ready' : 'Preview mode',
+      settlement_status: simulationReady ? 'Simulation ready' : 'Preview only',
+      execution_mode: simulationReady ? 'simulation_ready' : 'preview_local',
+      provider_label: simulationReady ? 'Simulation Ready' : 'Local Preview',
       ...backendData,
     },
   };
@@ -38,6 +40,7 @@ export default async function handler(req, res) {
       sodex_signed_order,
     } = req.body;
     const liveExecutionRequested = execution_provider === 'sodex' || Boolean(sodex_signed_order);
+    const simulationReadyRequested = req.body?.simulation_mode === 'sodex_simulation_ready';
 
     if (!symbol || !trade_type || !amount || !price) {
       return res.status(400).json({
@@ -102,11 +105,15 @@ export default async function handler(req, res) {
     const isSodexExecution = providerSource.toLowerCase() === 'sodex';
     const executionMode = isSodexExecution
       ? 'sodex_live'
+      : simulationReadyRequested
+        ? 'simulation_ready'
       : result?.preview_only
         ? 'preview_backend'
         : 'internal_fallback';
     const providerLabel = isSodexExecution
       ? 'SoDEX Testnet'
+      : simulationReadyRequested
+        ? 'Simulation Ready'
       : settlement?.source
         ? String(settlement.source)
         : result?.preview_only

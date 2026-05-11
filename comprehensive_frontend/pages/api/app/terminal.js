@@ -8,49 +8,17 @@ import {
   normalizeChainId,
   resolveBlockchainConfig,
 } from '../../../lib/walletNetwork';
-import { SIGNAL_TYPES } from '../../../lib/enums';
+import {
+  buildAptIntelligenceScore,
+  clamp,
+  resolveSignalType,
+} from '../../../lib/aptIntelligence';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
 const REQUEST_TIMEOUT_MS = 3000;
 const SODEX_TESTNET_CHAIN_ID = 138565;
 const TERMINAL_SYMBOLS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'MATIC', 'LINK'];
 const DEMO_UPDATED_AT = '2026-04-26T12:00:00.000Z';
-
-const MARKET_REGIME = Object.freeze({
-  BULL_TREND: 'Bull Trend',
-  BEAR_TREND: 'Bear Trend',
-  CONSOLIDATION: 'Consolidation',
-  VOLATILITY: 'High Volatility',
-  DEFENSIVE: 'Defensive Rotation',
-  MOMENTUM: 'Momentum Watch',
-});
-
-const CONVICTION_TIERS = Object.freeze({
-  VERY_HIGH: { min: 0.85, label: 'Very High Conviction', emoji: '🔥' },
-  HIGH: { min: 0.8, label: 'High Conviction', emoji: '🔹' },
-  ACTIONABLE: { min: 0.7, label: 'Actionable', emoji: '⚡' },
-  MODERATE: { min: 0.6, label: 'Moderate Conviction', emoji: '🟡' },
-  CONDITIONAL: { min: 0.5, label: 'Conditional', emoji: '⚠️' },
-  LOW: { min: 0, label: 'Low Conviction', emoji: '🔻' },
-});
-
-const CONFIDENCE_DRIVERS = Object.freeze({
-  MOMENTUM: 'Live price momentum',
-  VOLUME_FLOW: 'Volume and order flow',
-  REGIME_ALIGNMENT: 'Market regime alignment',
-  SIGNAL_FALLBACK: 'Signal fallback model',
-  EXECUTION_GUARDRAILS: 'Execution guardrails',
-  WHALE_TRACKING: 'Whale tracking',
-  FUNDAMENTALS: 'Fundamental analysis',
-  TECHNICAL: 'Technical indicators',
-  SENTIMENT: 'Market sentiment',
-});
-
-const SIGNAL_NAMES = Object.freeze({
-  LONG: 'Long Bias',
-  SHORT: 'Short Bias',
-  HOLD: 'Watch / Hold',
-});
 
 const SYMBOL_NAMES = {
   BTC: 'Bitcoin',
@@ -99,204 +67,12 @@ const DEMO_HISTORY = [
   },
 ];
 
-// ═══════════════════════════════════════════════════════════
-// AI Conviction Score Engine
-// ═══════════════════════════════════════════════════════════
-
-/**
- * The AI Conviction Score (ACS) is a composite, real-time score [0–1]
- * that drives every trading decision, UI badge, and risk guardrail.
- *
- * It blends four signal layers:
- *   1. Live Price Momentum   — short-window price change
- *   2. Volume / Order-Flow   — relative volume spike
- *   3. Regime Alignment      — bullish/bearish/consolidation
- *   4. Signal Fallback       — pre-built AI signals when live data absent
- *
- * Guardrail overlays (risk caps, drawdown limits) then bound the final
- * score before it is classified into a ConvictionTier.
- */
-class AIConvictionEngine {
-  constructor() {
-    // Tunable weights (must sum to 1.0)
-    this.weights = {
-      momentum: 0.35,
-      volumeFlow: 0.25,
-      regimeAlignment: 0.25,
-      signalFallback: 0.15,
-    };
-
-    // Guardrail thresholds
-    this.maxPositionPctOfPortfolio = 0.10;
-    this.maxDrawdownPct = 0.03;
-    this.maxOpenPositions = 5;
-
-    // In-memory regime state per symbol
-    this._regimes = new Map();
-  }
-
-  // ── Layer 1: Live Price Momentum ──────────────────────────
-  _scoreMomentum(signal = {}) {
-    const { priceChange24h, priceChange1h } = signal;
-    if (priceChange24h == null && priceChange1h == null) return 0.5;
-
-    const h1 = priceChange1h ?? 0;
-    const h24 = priceChange24h ?? 0;
-    const raw = 0.6 * h1 + 0.4 * h24; // weighted blend
-
-    // Sigmoid normalisation: ±5 % maps to ≈ 0.15–0.85
-    return clamp(1 / (1 + Math.exp(-raw * 8)), 0, 1);
-  }
-
-  // ── Layer 2: Volume / Order-Flow ──────────────────────────
-  _scoreVolumeFlow(signal = {}) {
-    const { volume24h, avgVolume24h } = signal;
-    if (volume24h == null || avgVolume24h == null || avgVolume24h === 0) return 0.5;
-
-    const ratio = volume24h / avgVolume24h; // >1 means above average
-    return clamp(0.3 + 0.14 * Math.log2(Math.max(ratio, 0.1)), 0, 1);
-  }
-
-  // ── Layer 3: Regime Alignment ─────────────────────────────
-  _detectRegime(signal = {}) {
-    const { priceChange24h, priceChange1h, volume24h, avgVolume24h } = signal;
-    const h24 = priceChange24h ?? 0;
-    const h1 = priceChange1h ?? 0;
-    const volRatio = (volume24h && avgVolume24h) ? volume24h / avgVolume24h : 1;
-
-    if (Math.abs(h24) > 5 && volRatio > 1.8) return MARKET_REGIME.VOLATILITY;
-    if (h24 > 2 && h1 > 0.5) return MARKET_REGIME.BULL_TREND;
-    if (h24 < -2 && h1 < -0.5) return MARKET_REGIME.BEAR_TREND;
-    if (Math.abs(h24) <= 1.5) return MARKET_REGIME.CONSOLIDATION;
-    if (h24 > 1 && h1 > 0.2) return MARKET_REGIME.MOMENTUM;
-    return MARKET_REGIME.CONSOLIDATION;
-  }
-
-  _scoreRegimeAlignment(signal = {}) {
-    const regime = this._detectRegime(signal);
-    this._regimes.set(signal.symbol ?? 'UNKNOWN', regime);
-
-    const action = resolveSignalType(signal);
-    const isBullish = action === SIGNAL_TYPES.BUY;
-    const isBearish = action === SIGNAL_TYPES.SELL;
-
-    switch (regime) {
-      case MARKET_REGIME.BULL_TREND:
-        return isBullish ? 0.9 : isBearish ? 0.25 : 0.55;
-      case MARKET_REGIME.BEAR_TREND:
-        return isBearish ? 0.9 : isBullish ? 0.25 : 0.55;
-      case MARKET_REGIME.VOLATILITY:
-        return 0.45; // uncertainty discount
-      case MARKET_REGIME.MOMENTUM:
-        return isBullish ? 0.8 : 0.5;
-      case MARKET_REGIME.CONSOLIDATION:
-      default:
-        return 0.55;
-    }
-  }
-
-  // ── Layer 4: Signal Fallback ──────────────────────────────
-  _scoreSignalFallback(signal = {}) {
-    const { confidence, strength } = signal;
-    const base = confidence ?? strength ?? 0.5;
-    return clamp(typeof base === 'number' ? base : 0.5, 0, 1);
-  }
-
-  // ── Guardrail Overlays ────────────────────────────────────
-  _applyGuardrails(rawScore, signal = {}) {
-    let score = rawScore;
-
-    // Hard cap: max exposure
-    if (signal.openPositions >= this.maxOpenPositions) {
-      score *= 0.5;
-    }
-
-    // Drawdown throttle
-    if (signal.portfolioDrawdownPct > this.maxDrawdownPct) {
-      score *= 0.6;
-    }
-
-    return clamp(score, 0, 1);
-  }
-
-  // ── Public API ────────────────────────────────────────────
-
-  /**
-   * Compute the full AI Conviction Score for a given signal.
-   * @param {object} signal
-   * @returns {{
-   *   score: number,           // 0-1
-   *   tier: object,            // { min, label, emoji }
-   *   signalName: string,      // Long Bias / Short Bias / Watch
-   *   regime: string,          // Market regime name
-   *   drivers: object,         // Per-layer scores
-   *   timestamp: string        // ISO timestamp
-   * }}
-   */
-  score(signal = {}) {
-    const momentum     = this._scoreMomentum(signal);
-    const volumeFlow   = this._scoreVolumeFlow(signal);
-    const regime       = this._scoreRegimeAlignment(signal);
-    const fallback     = this._scoreSignalFallback(signal);
-
-    const raw =
-      this.weights.momentum      * momentum +
-      this.weights.volumeFlow    * volumeFlow +
-      this.weights.regimeAlignment * regime +
-      this.weights.signalFallback  * fallback;
-
-    const finalScore = this._applyGuardrails(raw, signal);
-    const tier = this._classifyTier(finalScore);
-    const action = resolveSignalType(signal);
-
-    return {
-      score: Math.round(finalScore * 100) / 100,
-      tier,
-      signalName: SIGNAL_NAMES[action] ?? SIGNAL_NAMES[SIGNAL_TYPES.BUY],
-      regime: this._regimes.get(signal.symbol ?? 'UNKNOWN') ?? this._detectRegime(signal),
-      drivers: {
-        [CONFIDENCE_DRIVERS.MOMENTUM]:          Math.round(momentum * 100) / 100,
-        [CONFIDENCE_DRIVERS.VOLUME_FLOW]:       Math.round(volumeFlow * 100) / 100,
-        [CONFIDENCE_DRIVERS.REGIME_ALIGNMENT]:  Math.round(regime * 100) / 100,
-        [CONFIDENCE_DRIVERS.SIGNAL_FALLBACK]:   Math.round(fallback * 100) / 100,
-      },
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  _classifyTier(score) {
-    if (score >= CONVICTION_TIERS.VERY_HIGH.min) return CONVICTION_TIERS.VERY_HIGH;
-    if (score >= CONVICTION_TIERS.HIGH.min)      return CONVICTION_TIERS.HIGH;
-    if (score >= CONVICTION_TIERS.ACTIONABLE.min) return CONVICTION_TIERS.ACTIONABLE;
-    if (score >= CONVICTION_TIERS.MODERATE.min)   return CONVICTION_TIERS.MODERATE;
-    if (score >= CONVICTION_TIERS.CONDITIONAL.min) return CONVICTION_TIERS.CONDITIONAL;
-    return CONVICTION_TIERS.LOW;
-  }
-
-  getRegime(symbol) {
-    return this._regimes.get(symbol) ?? MARKET_REGIME.CONSOLIDATION;
-  }
-}
-
-const convictionEngine = new AIConvictionEngine();
-
-function resolveSignalType(payload = {}) {
-  const rawValue = payload?.signal_type || payload?.type || payload?.trade_type || payload?.signal || '';
-  if (/sell|short/i.test(rawValue)) return SIGNAL_TYPES.SELL;
-  if (/hold|watch/i.test(rawValue)) return SIGNAL_TYPES.HOLD;
-  return SIGNAL_TYPES.BUY;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function isShortBias(action = '') {
-  return resolveSignalType(action) === SIGNAL_TYPES.SELL;
+  return resolveSignalType(action) === 'SELL';
 }
 
 function isHoldBias(action = '') {
-  return resolveSignalType(action) === SIGNAL_TYPES.HOLD;
+  return resolveSignalType(action) === 'HOLD';
 }
 
 function inferAction(change24h = 0) {
@@ -384,15 +160,12 @@ function buildDerivedSignal(symbol, liveData = {}) {
   const price = Number(liveData?.price || 0);
   const change24h = Number(liveData?.change_24h || 0);
   const signal = inferAction(change24h);
-  const confidence = clamp(0.58 + Math.abs(change24h) / 18, 0.58, 0.83);
   const riskScore = clamp(Math.round(55 - Math.abs(change24h) * 3), 26, 68);
-
-  return {
+  const intelligenceSeed = {
     symbol,
     name: SYMBOL_NAMES[symbol] || symbol,
     signal,
-    confidence,
-    confidenceLabel: confidence >= 0.8 ? 'High Conviction' : confidence >= 0.7 ? 'Actionable' : 'Conditional',
+    confidence: clamp(0.58 + Math.abs(change24h) / 18, 0.58, 0.83),
     price,
     change24h,
     horizon: Math.abs(change24h) >= 4 ? '8-18h' : '1-2d',
@@ -411,25 +184,7 @@ function buildDerivedSignal(symbol, liveData = {}) {
     stopLoss: buildStopLoss(price, signal),
     targetZone: buildTargetZone(price, signal),
     rewardRisk: signal === 'Watch / Hold' ? '1.4x' : '2.0x',
-    simulatedEdge: `${(confidence * 5).toFixed(1)}%`,
     riskScore,
-    confidenceDrivers: [
-      {
-        label: 'Live price momentum',
-        weight: clamp(Math.round(Math.abs(change24h) * 7 + 10), 10, 28),
-        detail: `${symbol} is moving ${change24h >= 0 ? 'with' : 'against'} the tape over the last 24 hours.`,
-      },
-      {
-        label: 'Signal fallback model',
-        weight: 18,
-        detail: 'This symbol is powered by the terminal fallback pack until a curated research card is available.',
-      },
-      {
-        label: 'Execution guardrails',
-        weight: clamp(30 - Math.round(Math.abs(change24h) * 3), 12, 30),
-        detail: 'Risk budget is sized conservatively because confidence comes from the lightweight overlay.',
-      },
-    ],
     orderFlow: [
       {
         venue: '24h tape',
@@ -448,6 +203,27 @@ function buildDerivedSignal(symbol, liveData = {}) {
       },
     ],
     chart: [],
+  };
+
+  const intelligence = buildAptIntelligenceScore({
+    symbol,
+    baseSignal: intelligenceSeed,
+    liveData,
+  });
+
+  return {
+    ...intelligenceSeed,
+    confidence: clamp((intelligenceSeed.confidence + intelligence.normalized) / 2, 0.4, 0.92),
+    confidenceLabel: intelligence.tier.label,
+    simulatedEdge: `${(intelligence.normalized * 5.5).toFixed(1)}%`,
+    confidenceDrivers: intelligence.drivers.map((driver) => ({
+      label: driver.label,
+      weight: driver.score,
+      detail: driver.detail,
+    })),
+    aptIntelligence: intelligence,
+    tierProgression: intelligence.tier,
+    intelligenceSummary: intelligence.summary,
   };
 }
 
@@ -525,7 +301,15 @@ function resolveSodexStatus(payload = null) {
     ? data.missing_requirements
     : [];
   const apiKeyMode = String(data?.api_key_mode || '').trim() || 'browser_wallet';
-  const mode = browserSigningReady ? 'live' : configured ? 'configured' : 'preview';
+  const stateMachineData = data?.state_machine || {};
+  const executionEngineData = data?.execution_engine || {};
+  const mode = browserSigningReady
+    ? 'live'
+    : data?.simulation_ready
+      ? 'simulation'
+      : configured
+        ? 'configured'
+        : 'preview';
   const providerLabel = browserSigningReady
     ? `SoDEX ${isTestnet ? 'Testnet' : 'Live'}`
     : configured
@@ -571,6 +355,7 @@ function resolveSodexStatus(payload = null) {
         source: signingNetworkData?.source || null,
       }
     : null;
+  const healthChecks = executionEngineData?.health_checks || {};
 
   return {
     provider: data?.provider || 'SoDEX',
@@ -595,6 +380,44 @@ function resolveSodexStatus(payload = null) {
     missingRequirements,
     readinessMessage,
     signingNetwork,
+    stateMachine: {
+      state: stateMachineData?.state || (configured ? 'CONNECTED' : 'DISCONNECTED'),
+      label: stateMachineData?.label || (configured ? 'Connected' : 'Disconnected'),
+      description:
+        stateMachineData?.description ||
+        (configured
+          ? 'SoDEX routing is configured for the workspace.'
+          : 'SoDEX routing is still in preview mode.'),
+    },
+    simulationReady: Boolean(
+      data?.simulation_ready ?? executionEngineData?.simulation_ready ?? (configured && !browserSigningReady)
+    ),
+    liveReady: Boolean(
+      data?.live_ready ?? executionEngineData?.live_ready ?? browserSigningReady
+    ),
+    executionEngine: {
+      health: String(executionEngineData?.health || (configured ? 'STANDBY' : 'PREVIEW')).toUpperCase(),
+      liveReady: Boolean(
+        executionEngineData?.live_ready ?? data?.live_ready ?? browserSigningReady
+      ),
+      simulationReady: Boolean(
+        executionEngineData?.simulation_ready ?? data?.simulation_ready ?? (configured && !browserSigningReady)
+      ),
+      lastCheckedAt: executionEngineData?.last_checked_at || null,
+      healthChecks: {
+        wallet: healthChecks?.wallet || null,
+        signing: healthChecks?.signing || null,
+        latency: healthChecks?.latency
+          ? {
+              status: healthChecks.latency?.status || 'UNKNOWN',
+              label: healthChecks.latency?.label || 'Unknown',
+              message: healthChecks.latency?.message || '',
+              latencyMs: Number(healthChecks.latency?.latencyMs || 0) || null,
+              path: healthChecks.latency?.path || null,
+            }
+          : null,
+      },
+    },
   };
 }
 
@@ -667,10 +490,16 @@ function buildModelBreakdown(prediction, enhanced, marketSentiment) {
   ];
 }
 
-function buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced) {
-  const drivers = [];
+function buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced, intelligence = null) {
+  const drivers = Array.isArray(intelligence?.drivers)
+    ? intelligence.drivers.map((driver) => ({
+        label: driver.label,
+        weight: driver.score,
+        detail: driver.detail,
+      }))
+    : [];
 
-  if (enhanced?.models?.lstm) {
+  if (enhanced?.models?.lstm && drivers.length < 4) {
     const priceChange = Number(enhanced.models.lstm.price_change || 0);
     drivers.push({
       label: 'Signal forecast',
@@ -679,7 +508,7 @@ function buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced) {
     });
   }
 
-  if (enhanced?.models?.random_forest) {
+  if (enhanced?.models?.random_forest && drivers.length < 4) {
     drivers.push({
       label: 'Pattern confirmation',
       weight: clamp(Math.round(Number(enhanced.models.random_forest.confidence || 0.62) * 100), 10, 30),
@@ -687,7 +516,7 @@ function buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced) {
     });
   }
 
-  if (enhanced?.research_context?.available) {
+  if (enhanced?.research_context?.available && drivers.length < 4) {
     drivers.push({
       label: 'SoSoValue research',
       weight: clamp(Math.round(Number(enhanced.research_context.catalyst_score || 0) * 10), 8, 26),
@@ -697,7 +526,7 @@ function buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced) {
     });
   }
 
-  if (enhanced?.market_data) {
+  if (enhanced?.market_data && drivers.length < 4) {
     drivers.push({
       label: 'Global market tape',
       weight: clamp(Math.round(Math.abs(Number(enhanced.market_data.price_change_24h || 0)) * 4 + 10), 8, 24),
@@ -973,7 +802,7 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
       baseSignal.change24h ??
       0
   );
-  const confidence = clamp(
+  const baseConfidence = clamp(
     Number(
       enhanced?.confidence ??
         prediction?.combined_confidence ??
@@ -989,15 +818,42 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
     0,
     100
   );
-  const confidenceDrivers = buildConfidenceDrivers(symbol, baseSignal, prediction, enhanced);
   const catalysts = buildCatalysts(symbol, baseSignal, enhanced);
   const modelBreakdown = buildModelBreakdown(prediction, enhanced, marketSentiment);
-  const simulatedEdge = `${(confidence * 5).toFixed(1)}%`;
   const catalystSummary =
     enhanced?.rationale_summary ||
     enhanced?.research_context?.rationale?.[0] ||
     catalysts[0]?.detail ||
     baseSignal.catalystSummary;
+  const intelligenceSeed = {
+    ...baseSignal,
+    symbol,
+    signal: actionSignal,
+    confidence: baseConfidence,
+    price,
+    change24h,
+    riskScore,
+    regime: enhanced?.macro_regime || enhanced?.research_context?.macro_regime || baseSignal.regime,
+    catalystSummary,
+    confirmationRequired: Boolean(enhanced?.confirmation_required),
+  };
+  const intelligence = buildAptIntelligenceScore({
+    symbol,
+    baseSignal: intelligenceSeed,
+    liveData,
+    prediction,
+    enhanced,
+    marketSentiment,
+  });
+  const confidence = clamp((baseConfidence + intelligence.normalized) / 2, 0.35, 0.99);
+  const confidenceDrivers = buildConfidenceDrivers(
+    symbol,
+    baseSignal,
+    prediction,
+    enhanced,
+    intelligence
+  );
+  const simulatedEdge = `${(intelligence.normalized * 5.5).toFixed(1)}%`;
 
   return {
     ...baseSignal,
@@ -1006,11 +862,12 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
     signal: actionSignal,
     confidence,
     confidenceLabel:
-      enhanced?.confidence_level === 'HIGH'
+      intelligence.tier.label ||
+      (enhanced?.confidence_level === 'HIGH'
         ? 'Institutional Grade'
         : enhanced?.confidence_level === 'MEDIUM'
           ? 'Actionable'
-          : baseSignal.confidenceLabel || 'Conditional',
+          : baseSignal.confidenceLabel || 'Conditional'),
     price,
     change24h,
     horizon: buildHorizon(enhanced, baseSignal.horizon),
@@ -1040,6 +897,9 @@ function buildBackendSignal(symbol, baseSignal, liveData, prediction, enhanced, 
     marketSentiment: marketSentiment || null,
     signalAlignment: enhanced?.signal_alignment || null,
     confirmationRequired: Boolean(enhanced?.confirmation_required),
+    aptIntelligence: intelligence,
+    tierProgression: intelligence.tier,
+    intelligenceSummary: intelligence.summary,
     source: enhanced ? 'Live signal overlay' : prediction ? 'AI signal overlay' : 'Curated overlay',
   };
 }
@@ -1050,10 +910,13 @@ function buildReadiness(blockchainPayload, activeSignal, enhanced, sodexStatus =
   const contractReady = Boolean(blockchainStatus.contract_deployed);
   const networkName = blockchainPayload?.network?.chainName || 'Execution network';
   const nativeSymbol = blockchainPayload?.network?.nativeCurrency?.symbol || 'tBNB';
-  const liveSodexReady = Boolean(sodexStatus?.browserSigningReady);
+  const liveSodexReady = Boolean(sodexStatus?.liveReady || sodexStatus?.browserSigningReady);
+  const simulationReady = Boolean(sodexStatus?.simulationReady);
   const sodexTone = sodexStatus?.readinessTone || 'var(--text-tertiary)';
   const statusLabel = liveSodexReady
     ? 'SODEX LIVE'
+    : simulationReady
+      ? 'SIM READY'
     : connected && contractReady
       ? 'READY'
       : connected
@@ -1061,6 +924,8 @@ function buildReadiness(blockchainPayload, activeSignal, enhanced, sodexStatus =
         : 'PREVIEW';
   const statusTone = liveSodexReady
     ? 'var(--green)'
+    : simulationReady
+      ? 'var(--yellow)'
     : connected && contractReady
       ? 'var(--green)'
       : connected
@@ -1075,8 +940,20 @@ function buildReadiness(blockchainPayload, activeSignal, enhanced, sodexStatus =
       tone: enhanced?.signal_alignment === 'STRONG' ? 'var(--green)' : connected ? 'var(--purple)' : 'var(--text-tertiary)',
     },
     contract: {
-      label: liveSodexReady ? sodexStatus.providerLabel : contractReady ? 'Ready' : 'Preview',
-      tone: liveSodexReady ? sodexTone : contractReady ? 'var(--purple)' : 'var(--yellow)',
+      label: liveSodexReady
+        ? sodexStatus.providerLabel
+        : simulationReady
+          ? 'Simulation Ready'
+          : contractReady
+            ? 'Ready'
+            : 'Preview',
+      tone: liveSodexReady
+        ? sodexTone
+        : simulationReady
+          ? 'var(--yellow)'
+          : contractReady
+            ? 'var(--purple)'
+            : 'var(--yellow)',
     },
     confirmation: {
       label: enhanced?.confirmation_required ? 'Required' : 'Cleared',
@@ -1088,11 +965,20 @@ function buildReadiness(blockchainPayload, activeSignal, enhanced, sodexStatus =
     },
     estimatedGasLabel: `~0.003 ${nativeSymbol}`,
     networkLabel: networkName,
-    executionModeLabel: liveSodexReady ? sodexStatus.executionLabel : 'Internal fallback',
+    executionModeLabel: liveSodexReady
+      ? sodexStatus.executionLabel
+      : simulationReady
+        ? 'Simulation-ready fallback'
+        : 'Internal fallback',
     sodex: {
-      label: sodexStatus?.executionLabel || 'Preview only',
-      tone: sodexTone,
+      label: liveSodexReady
+        ? sodexStatus?.executionLabel || 'SoDEX live'
+        : simulationReady
+          ? 'Simulation ready'
+          : sodexStatus?.executionLabel || 'Preview only',
+      tone: liveSodexReady ? sodexTone : simulationReady ? 'var(--yellow)' : sodexTone,
       liveReady: liveSodexReady,
+      simulationReady,
     },
     networkConnected: connected,
     contractReady,

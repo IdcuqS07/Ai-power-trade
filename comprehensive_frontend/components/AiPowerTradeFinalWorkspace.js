@@ -6,6 +6,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import { formatUsd } from '../lib/formatters';
 import { aiSignals } from '../lib/premiumData';
+import {
+  buildContextualApr,
+  resolveSodexRuntimeState,
+  resolveSsiRuntimeState,
+} from '../lib/runtimeState';
 import { parseChainIdValue, shortenAddress } from '../lib/walletNetwork';
 import styles from '../styles/ai-power-trade-workspace.module.css';
 import SosoValueCard from './SosoValueCard';
@@ -264,6 +269,8 @@ function createFallbackTerminalData() {
       isTestnet: true,
       browserSigningReady: false,
       canPrepareOrder: false,
+      simulationReady: false,
+      liveReady: false,
       baseUrl: null,
       apiKeyMode: 'browser_wallet',
       browserWalletApiKeySupported: true,
@@ -281,6 +288,36 @@ function createFallbackTerminalData() {
         rpcUrls: [],
         blockExplorerUrls: [],
         source: 'derived',
+      },
+      stateMachine: {
+        state: 'DISCONNECTED',
+        label: 'Disconnected',
+        description: 'SoDEX is still in preview mode.',
+      },
+      executionEngine: {
+        health: 'PREVIEW',
+        liveReady: false,
+        simulationReady: false,
+        lastCheckedAt: null,
+        healthChecks: {
+          wallet: {
+            status: 'UNAVAILABLE',
+            label: 'Connect wallet',
+            message: 'Wallet checks are only available in the browser runtime.',
+          },
+          signing: {
+            status: 'PREVIEW',
+            label: 'Preview',
+            message: 'Signing is unavailable until SoDEX is configured.',
+          },
+          latency: {
+            status: 'UNKNOWN',
+            label: 'Unknown',
+            message: 'Latency probe has not reported yet.',
+            latencyMs: null,
+            path: null,
+          },
+        },
       },
     },
     readiness: {
@@ -1023,33 +1060,52 @@ function RightExecutionPanel({
           : `Live ${tokenSymbol} unavailable`;
   const ssiProfile = wallet.ssiProfile || null;
   const ssiProgramName = ssiProfile?.program?.name || 'SSI';
-  const ssiTierLabel = ssiProfile?.holding?.tier?.label || (wallet.isConnected ? 'Syncing' : 'Preview');
-  const ssiScore = Number(ssiProfile?.participation?.score);
-  const ssiApr = Number(ssiProfile?.rewards?.estimated_program_apr);
-  const ssiStakingReady = Boolean(ssiProfile?.holding?.staking_ready);
+  const intelligence = activeSignal?.aptIntelligence || null;
+  const ssiRuntime = resolveSsiRuntimeState({
+    wallet,
+    ssiProfile,
+    intelligence,
+  });
+  const ssiTierLabel = ssiRuntime.tier.label;
+  const rawSsiScore = Number.isFinite(Number(ssiProfile?.participation?.score))
+    ? Number(ssiProfile?.participation?.score)
+    : typeof ssiRuntime.participationScore === 'number' &&
+        Number.isFinite(ssiRuntime.participationScore)
+      ? ssiRuntime.participationScore
+      : null;
+  const ssiScore = Number.isFinite(rawSsiScore) ? rawSsiScore : null;
   const readinessState = readiness || {};
-  const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
-  const sodexConfigured = Boolean(sodexStatus?.configured);
-  const sodexTone = sodexStatus?.readinessTone || 'var(--text-tertiary)';
-  const sodexSigningChainId = parseChainIdValue(
-    sodexStatus?.signingNetwork?.chainId || sodexStatus?.signingChainId
-  );
-  const needsSodexSigningSwitch = Boolean(
-    liveSodexReady &&
-      wallet.isConnected &&
-      sodexSigningChainId &&
-      chainId &&
-      sodexSigningChainId !== chainId
-  );
+  const sodexLiveCapable = Boolean(sodexStatus?.canPrepareOrder);
+  const sodexRuntime = resolveSodexRuntimeState({
+    wallet,
+    sodexStatus,
+    chainId,
+  });
+  const liveSodexReady = sodexRuntime.liveReady;
+  const sodexTone = liveSodexReady
+    ? sodexRuntime.tone
+    : sodexStatus?.readinessTone || sodexRuntime.tone || 'var(--text-tertiary)';
+  const aprContext = buildContextualApr({
+    ssiProfile,
+    intelligence,
+    sodexRuntime,
+    activeSignal,
+  });
+  const aptScore = Number(intelligence?.score || confidencePercent || 0);
+  const aptTierLabel = intelligence?.tier?.label || ssiTierLabel;
   const contractStatus =
     executionState === 'success'
       ? 'Executed'
       : executionState === 'submitting'
         ? 'Submitting'
-        : !liveSodexReady && wallet.isWrongNetwork
+        : !sodexLiveCapable && wallet.isWrongNetwork
           ? 'Switch Network'
-          : needsSodexSigningSwitch
+          : sodexRuntime.needsSigningSwitch
             ? 'Switch for Signing'
+          : liveSodexReady
+            ? 'Live Ready'
+            : sodexRuntime.simulationReady
+              ? 'Simulation Ready'
           : wallet.isConnected
             ? readinessState.contract?.label || 'Ready'
             : 'Preview';
@@ -1060,7 +1116,11 @@ function RightExecutionPanel({
         ? '⏳ SUBMITTING TRADE'
         : actionLabel === 'HOLD'
           ? '⚠ AI SIGNAL ON HOLD'
-          : '⚡ EXECUTE AI TRADE';
+          : liveSodexReady
+            ? '⚡ EXECUTE LIVE TRADE'
+            : sodexRuntime.simulationReady
+              ? '⚗ RUN AI SIMULATION'
+              : '⚡ EXECUTE AI TRADE';
   const executeSubLabel =
     executionState === 'success'
       ? feedback?.tradeId || 'Open Trade History'
@@ -1068,14 +1128,16 @@ function RightExecutionPanel({
         ? 'Waiting for execution confirmation'
       : actionLabel === 'HOLD'
           ? 'Wait for directional confirmation'
-          : !liveSodexReady && wallet.isWrongNetwork
+          : !sodexLiveCapable && wallet.isWrongNetwork
             ? 'Switch network to continue'
-            : needsSodexSigningSwitch
+            : sodexRuntime.needsSigningSwitch
               ? `Switch to ${sodexStatus?.signingNetwork?.chainName || 'ValueChain'} to sign the SoDEX order`
+            : sodexLiveCapable && !wallet.isConnected
+              ? 'Connect wallet to unlock live SoDEX signing'
             : liveSodexReady
-              ? wallet.isConnected
-                ? 'Sign the SoDEX testnet order in wallet'
-                : 'Connect wallet to sign the SoDEX testnet order'
+              ? 'Sign the SoDEX order in wallet'
+              : sodexRuntime.simulationReady
+                ? 'Run through the simulation-ready route while live signing stays on standby'
               : wallet.isConnected
                 ? 'Run through the current fallback execution route'
                 : 'Connect wallet to continue';
@@ -1103,29 +1165,40 @@ function RightExecutionPanel({
         <div className={styles['sodex-card']}>
           <div className={styles['compact-header']}>
             <strong>SoDEX Testnet</strong>
-            <span
-              className={classes(
-                'status-pill',
-                liveSodexReady
-                  ? 'status-pill-live'
-                  : sodexConfigured
-                    ? 'status-pill-warn'
-                    : 'status-pill-preview'
-              )}
-            >
-              {liveSodexReady ? 'Live' : sodexConfigured ? 'Config' : 'Preview'}
+            <span className={classes('status-pill', sodexRuntime.pillToneClass)}>
+              {sodexRuntime.shortLabel}
             </span>
           </div>
           <div className={styles['compact-grid']}>
             <div className={styles['compact-item']}>
+              <span>State</span>
+              <strong style={{ color: sodexRuntime.tone }}>{sodexRuntime.label}</strong>
+            </div>
+            <div className={styles['compact-item']}>
               <span>Route</span>
               <strong style={{ color: sodexTone }}>
-                {sodexStatus?.executionLabel || 'Preview'}
+                {liveSodexReady
+                  ? sodexStatus?.executionLabel || 'SoDEX Live'
+                  : sodexRuntime.simulationReady
+                    ? 'Simulation Ready'
+                    : sodexStatus?.executionLabel || 'Preview'}
               </strong>
             </div>
             <div className={styles['compact-item']}>
               <span>Market</span>
               <strong>{String(sodexStatus?.marketType || 'SPOT').toUpperCase()}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Wallet</span>
+              <strong>{sodexRuntime.healthChecks.wallet.label}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Signing</span>
+              <strong>{sodexRuntime.healthChecks.signing.label}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Latency</span>
+              <strong>{sodexRuntime.healthChecks.latency.label}</strong>
             </div>
             <div className={styles['compact-item']}>
               <span>Account</span>
@@ -1137,12 +1210,22 @@ function RightExecutionPanel({
         <div className={styles['ssi-card']}>
           <div className={styles['compact-header']}>
             <strong>{ssiProgramName}</strong>
-            <span className={styles['ssi-badge']}>{ssiStakingReady ? 'Ready' : wallet.isConnected ? 'Building' : 'Preview'}</span>
+            <span className={classes('status-pill', ssiRuntime.badgeToneClass)}>
+              {ssiRuntime.label}
+            </span>
           </div>
           <div className={styles['compact-grid']}>
             <div className={styles['compact-item']}>
+              <span>Status</span>
+              <strong>{ssiRuntime.label}</strong>
+            </div>
+            <div className={styles['compact-item']}>
               <span>Tier</span>
               <strong>{ssiTierLabel}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Progression</span>
+              <strong>{ssiRuntime.tier.label}</strong>
             </div>
             <div className={styles['compact-item']}>
               <span>Score</span>
@@ -1150,7 +1233,11 @@ function RightExecutionPanel({
             </div>
             <div className={styles['compact-item']}>
               <span>APR</span>
-              <strong>{Number.isFinite(ssiApr) ? `${ssiApr.toFixed(1)}%` : '--'}</strong>
+              <strong>{aprContext.displayValue}</strong>
+            </div>
+            <div className={styles['compact-item']}>
+              <span>Context</span>
+              <strong>{aprContext.label}</strong>
             </div>
           </div>
         </div>
@@ -1175,9 +1262,15 @@ function RightExecutionPanel({
               </div>
             </div>
             <div className={styles['ai-lock-item']}>
-              <div className={styles['ai-lock-label']}>Confidence</div>
+              <div className={styles['ai-lock-label']}>APT Score</div>
               <div className={classes('ai-lock-value', 'tone-green')}>
-                {confidencePercent}%
+                {Number.isFinite(aptScore) ? `${Math.round(aptScore)}` : '--'}
+              </div>
+            </div>
+            <div className={styles['ai-lock-item']}>
+              <div className={styles['ai-lock-label']}>Tier</div>
+              <div className={classes('ai-lock-value', 'tone-cyan')}>
+                {aptTierLabel}
               </div>
             </div>
           </div>
@@ -1529,7 +1622,12 @@ export default function AiPowerTradeFinalWorkspace() {
   const readiness = terminalData?.readiness || {};
   const research = terminalData?.research?.[activeSymbol] || null;
   const sodexStatus = terminalData?.sodex || null;
-  const liveSodexReady = Boolean(sodexStatus?.canPrepareOrder);
+  const sodexRuntime = resolveSodexRuntimeState({
+    wallet,
+    sodexStatus,
+    chainId,
+  });
+  const sodexLiveCapable = Boolean(sodexStatus?.canPrepareOrder);
   const mergedHistory = [...localHistory, ...remoteHistory].slice(0, 8);
   const walletButton = getWalletButtonState(wallet);
   const topMovers = getTopMovers(signals, activeSymbol);
@@ -1724,7 +1822,7 @@ export default function AiPowerTradeFinalWorkspace() {
       return;
     }
 
-    const ready = liveSodexReady
+    const ready = sodexLiveCapable
       ? await wallet.ensureWalletConnected()
       : await wallet.ensureWalletReady();
 
@@ -1798,7 +1896,7 @@ export default function AiPowerTradeFinalWorkspace() {
       };
       let preparedLiveExecution = null;
 
-      if (liveSodexReady) {
+      if (sodexLiveCapable) {
         try {
           const prepareResponse = await fetch('/api/backend/sodex/prepare-order', {
             method: 'POST',
@@ -1857,6 +1955,12 @@ export default function AiPowerTradeFinalWorkspace() {
           cl_ord_id: preparedLiveExecution.cl_ord_id,
           estimated_quantity: preparedLiveExecution.estimated_quantity,
         };
+      }
+
+      if (sodexRuntime.simulationReady && !preparedLiveExecution) {
+        tradeRequest.execution_provider = 'simulation_ready';
+        tradeRequest.simulation_mode = 'sodex_simulation_ready';
+        tradeRequest.simulation_state = sodexRuntime.state;
       }
 
       const response = await fetch('/api/trades/execute-simulated', {
@@ -1926,6 +2030,8 @@ export default function AiPowerTradeFinalWorkspace() {
         payload?.data?.provider_label ||
         (payload?.data?.execution_mode === 'sodex_live'
           ? 'SoDEX Testnet'
+          : payload?.data?.execution_mode === 'simulation_ready'
+            ? 'Simulation Ready'
           : payload?.data?.execution_mode === 'preview_local'
             ? 'Local Preview'
             : 'Internal Fallback');

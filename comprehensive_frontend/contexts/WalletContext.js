@@ -9,6 +9,7 @@ import {
   shortenAddress,
 } from '../lib/walletNetwork';
 import { getInjectedWalletProvider, waitForInjectedWalletProvider } from '../lib/browserWallet';
+import { SSI_STATUSES } from '../lib/enums';
 
 const WalletContext = createContext(null);
 
@@ -110,6 +111,9 @@ function createInitialWalletState() {
     canClaim: false,
     cooldownSeconds: 0,
     ssiProfile: null,
+    ssiStatus: SSI_STATUSES.INITIALIZING,
+    ssiError: '',
+    ssiLastSyncedAt: null,
     networkConfig: getDefaultChainConfig(),
     tokenMeta: FALLBACK_TOKEN,
   };
@@ -370,11 +374,20 @@ export function WalletProvider({ children }) {
       safeSetWalletState((current) => ({
         ...current,
         ssiProfile: null,
+        ssiStatus: SSI_STATUSES.PREVIEW,
+        ssiError: '',
+        ssiLastSyncedAt: null,
       }));
       return null;
     }
 
     try {
+      safeSetWalletState((current) => ({
+        ...current,
+        ssiStatus: current.ssiProfile ? current.ssiStatus : SSI_STATUSES.SYNCING,
+        ssiError: '',
+      }));
+
       const payload = await fetchWalletJson(
         `ssi/overview/${encodeURIComponent(nextAddress)}?include_sodex=true&filter_primary_by_user=true`
       );
@@ -383,11 +396,19 @@ export function WalletProvider({ children }) {
       safeSetWalletState((current) => ({
         ...current,
         ssiProfile: data,
+        ssiStatus: SSI_STATUSES.READY,
+        ssiError: '',
+        ssiLastSyncedAt: new Date().toISOString(),
       }));
 
       return data;
     } catch (error) {
       console.warn('SSI participation refresh failed:', error);
+      safeSetWalletState((current) => ({
+        ...current,
+        ssiStatus: SSI_STATUSES.UNAVAILABLE,
+        ssiError: error.message || 'Unable to sync SSI participation',
+      }));
       return null;
     }
   };
@@ -415,6 +436,9 @@ export function WalletProvider({ children }) {
         tokenBalanceError: '',
         canClaim: false,
         cooldownSeconds: 0,
+        ssiStatus: SSI_STATUSES.PREVIEW,
+        ssiError: '',
+        ssiLastSyncedAt: null,
       }));
 
       return {
@@ -479,6 +503,9 @@ export function WalletProvider({ children }) {
         canClaim: false,
         cooldownSeconds: 0,
         ssiProfile: null,
+        ssiStatus: SSI_STATUSES.PREVIEW,
+        ssiError: '',
+        ssiLastSyncedAt: null,
       }));
     }
 
@@ -697,6 +724,10 @@ export function WalletProvider({ children }) {
       tokenBalanceError: '',
       canClaim: false,
       cooldownSeconds: 0,
+      ssiProfile: null,
+      ssiStatus: SSI_STATUSES.PREVIEW,
+      ssiError: '',
+      ssiLastSyncedAt: null,
     }));
 
     if (!provider) {

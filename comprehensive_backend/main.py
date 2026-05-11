@@ -3399,8 +3399,9 @@ async def prepare_sodex_order(request: SodexOrderPreparationRequest):
 
 
 @app.get("/api/sodex/status")
+@app.get("/api/sodex/status/runtime")
 async def get_sodex_status():
-    """Get SoDEX read-path integration status."""
+    """Get SoDEX runtime status, health checks, and execution state machine."""
     if not SODEX_AVAILABLE or not sodex_service:
         raise HTTPException(status_code=503, detail="SoDEX backend service is not available")
 

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, List, Optional
@@ -48,6 +49,11 @@ PERPS_MODIFIER_NORMAL = 1
 PERPS_POSITION_SIDE_BOTH = 1
 RAW_SIGNATURE_HEX_LENGTH = 130
 TYPED_SIGNATURE_HEX_LENGTH = 132
+SODEX_STATE_DISCONNECTED = "DISCONNECTED"
+SODEX_STATE_CONNECTED = "CONNECTED"
+SODEX_STATE_SIMULATION_READY = "SIMULATION_READY"
+SODEX_STATE_LIVE_READY = "LIVE_READY"
+SODEX_STATE_DEGRADED = "DEGRADED"
 
 
 class SoDEXService:
@@ -146,6 +152,98 @@ class SoDEXService:
             ),
         }
 
+    @staticmethod
+    def _build_health_check(status: str, label: str, message: str, **extra: Any) -> Dict[str, Any]:
+        payload = {
+            "status": status,
+            "label": label,
+            "message": message,
+        }
+        payload.update(extra)
+        return payload
+
+    def _probe_gateway_latency(self) -> Dict[str, Any]:
+        if not self.is_available():
+            return self._build_health_check(
+                "UNAVAILABLE",
+                "Unavailable",
+                "Set SODEX_API_URL to enable gateway latency probes.",
+                latencyMs=None,
+                path=None,
+            )
+
+        probe_path = "/markets/tickers"
+        started_at = time.perf_counter()
+
+        try:
+            response = self.session.get(
+                f"{self.base_url}{probe_path}",
+                params={},
+                timeout=min(self.timeout_seconds, 2.5),
+            )
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+
+            if response.ok:
+                status = "HEALTHY" if elapsed_ms <= 1200 else "DEGRADED"
+                return self._build_health_check(
+                    status,
+                    f"{int(elapsed_ms)}ms",
+                    "SoDEX gateway responded to the market-data probe.",
+                    latencyMs=elapsed_ms,
+                    path=probe_path,
+                    httpStatus=response.status_code,
+                )
+
+            return self._build_health_check(
+                "DEGRADED",
+                f"HTTP {response.status_code}",
+                "SoDEX gateway responded, but the latency probe did not complete cleanly.",
+                latencyMs=elapsed_ms,
+                path=probe_path,
+                httpStatus=response.status_code,
+            )
+        except Exception as exc:
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+            return self._build_health_check(
+                "DEGRADED",
+                "Probe failed",
+                f"SoDEX gateway latency probe failed: {exc}",
+                latencyMs=elapsed_ms,
+                path=probe_path,
+            )
+
+    @staticmethod
+    def _derive_state_machine(
+        *,
+        configured: bool,
+        browser_signing_ready: bool,
+        latency_status: str,
+    ) -> Dict[str, Any]:
+        normalized_latency = str(latency_status or "").upper()
+
+        if not configured:
+            state = SODEX_STATE_DISCONNECTED
+            label = "Disconnected"
+            description = "Backend routing is still in preview because SoDEX is not configured."
+        elif normalized_latency == "DEGRADED":
+            state = SODEX_STATE_DEGRADED
+            label = "Degraded"
+            description = "Gateway or signing health is degraded, so execution should stay conservative."
+        elif browser_signing_ready:
+            state = SODEX_STATE_LIVE_READY
+            label = "Live Ready"
+            description = "The backend can prepare browser-signed SoDEX orders."
+        else:
+            state = SODEX_STATE_CONNECTED
+            label = "Connected"
+            description = "SoDEX is reachable, but execution should stay in simulation until signing is fully armed."
+
+        return {
+            "state": state,
+            "label": label,
+            "description": description,
+        }
+
     def get_service_status(self) -> Dict[str, Any]:
         market_type = self.get_market_type()
         configured = self.is_available()
@@ -155,6 +253,7 @@ class SoDEXService:
         signing_network = self.get_signing_network_config() if configured else None
         has_signing_rpc = bool(signing_network and signing_network.get("rpcUrls"))
         missing_requirements = []
+        latency_check = self._probe_gateway_latency()
 
         if not configured:
             missing_requirements.append("SODEX_API_URL")
@@ -194,6 +293,55 @@ class SoDEXService:
                 f"(chain ID {signing_network['chainId']}) unless SODEX_SIGNING_RPC_URL is configured."
             )
 
+        state_machine = self._derive_state_machine(
+            configured=configured,
+            browser_signing_ready=browser_signing_ready,
+            latency_status=latency_check.get("status"),
+        )
+        simulation_ready = configured and not browser_signing_ready
+        live_ready = browser_signing_ready and latency_check.get("status") != "DEGRADED"
+        signing_check = self._build_health_check(
+            "READY"
+            if live_ready
+            else "SIMULATION"
+            if configured
+            else "PREVIEW",
+            "Ready"
+            if live_ready
+            else "Simulation fallback"
+            if configured
+            else "Preview",
+            "Typed-data signing payloads can be prepared."
+            if browser_signing_ready
+            else "Account ID is still missing, so orders should stay in simulation mode."
+            if configured
+            else "Signing is unavailable until SoDEX is configured.",
+        )
+        wallet_check = self._build_health_check(
+            "CLIENT_REQUIRED" if configured else "UNAVAILABLE",
+            "Connect wallet" if configured else "Unavailable",
+            "Wallet connectivity is verified in the browser runtime."
+            if configured
+            else "Browser wallet checks will stay disabled until SoDEX is configured.",
+        )
+        execution_engine = {
+            "health": (
+                "HEALTHY"
+                if live_ready
+                else "DEGRADED"
+                if configured and latency_check.get("status") == "DEGRADED"
+                else "STANDBY"
+            ),
+            "live_ready": live_ready,
+            "simulation_ready": simulation_ready,
+            "health_checks": {
+                "wallet": wallet_check,
+                "signing": signing_check,
+                "latency": latency_check,
+            },
+            "last_checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
         return {
             "provider": "SoDEX",
             "configured": configured,
@@ -212,6 +360,10 @@ class SoDEXService:
             "readiness_message": readiness_message,
             "signing_domain": self.get_signing_domain() if configured else None,
             "signing_network": signing_network,
+            "state_machine": state_machine,
+            "simulation_ready": simulation_ready,
+            "live_ready": live_ready,
+            "execution_engine": execution_engine,
         }
 
     def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
