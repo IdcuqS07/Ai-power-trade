@@ -217,6 +217,7 @@ class SoDEXService:
         *,
         configured: bool,
         browser_signing_ready: bool,
+        simulation_ready: bool,
         latency_status: str,
     ) -> Dict[str, Any]:
         normalized_latency = str(latency_status or "").upper()
@@ -233,6 +234,10 @@ class SoDEXService:
             state = SODEX_STATE_LIVE_READY
             label = "Live Ready"
             description = "The backend can prepare browser-signed SoDEX orders."
+        elif simulation_ready:
+            state = SODEX_STATE_SIMULATION_READY
+            label = "Simulation Ready"
+            description = "SoDEX is configured and reachable. Execution route is simulation with live signing on standby."
         else:
             state = SODEX_STATE_CONNECTED
             label = "Connected"
@@ -293,33 +298,51 @@ class SoDEXService:
                 f"(chain ID {signing_network['chainId']}) unless SODEX_SIGNING_RPC_URL is configured."
             )
 
+        simulation_ready = configured and not browser_signing_ready
+        live_ready = browser_signing_ready and latency_check.get("status") != "DEGRADED"
+
         state_machine = self._derive_state_machine(
             configured=configured,
             browser_signing_ready=browser_signing_ready,
+            simulation_ready=simulation_ready,
             latency_status=latency_check.get("status"),
         )
-        simulation_ready = configured and not browser_signing_ready
-        live_ready = browser_signing_ready and latency_check.get("status") != "DEGRADED"
+
+        execution_route = (
+            "live"
+            if live_ready
+            else "simulation"
+            if simulation_ready
+            else "preview"
+        )
+        route_status = (
+            "Live Ready"
+            if live_ready
+            else "Simulation"
+            if simulation_ready
+            else "Preview"
+        )
+
         signing_check = self._build_health_check(
             "READY"
             if live_ready
             else "SIMULATION"
-            if configured
+            if simulation_ready
             else "PREVIEW",
-            "Ready"
+            "Active"
             if live_ready
-            else "Simulation fallback"
-            if configured
+            else "Ready"
+            if simulation_ready
             else "Preview",
             "Typed-data signing payloads can be prepared."
             if browser_signing_ready
-            else "Account ID is still missing, so orders should stay in simulation mode."
-            if configured
+            else "Simulation signing is active; live signing stays on standby."
+            if simulation_ready
             else "Signing is unavailable until SoDEX is configured.",
         )
         wallet_check = self._build_health_check(
             "CLIENT_REQUIRED" if configured else "UNAVAILABLE",
-            "Connect wallet" if configured else "Unavailable",
+            "Ready" if configured else "Unavailable",
             "Wallet connectivity is verified in the browser runtime."
             if configured
             else "Browser wallet checks will stay disabled until SoDEX is configured.",
@@ -328,6 +351,8 @@ class SoDEXService:
             "health": (
                 "HEALTHY"
                 if live_ready
+                else "HEALTHY"
+                if simulation_ready
                 else "DEGRADED"
                 if configured and latency_check.get("status") == "DEGRADED"
                 else "STANDBY"
@@ -341,6 +366,8 @@ class SoDEXService:
             },
             "last_checked_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        latency_ms = latency_check.get("latencyMs")
 
         return {
             "provider": "SoDEX",
@@ -361,6 +388,15 @@ class SoDEXService:
             "signing_domain": self.get_signing_domain() if configured else None,
             "signing_network": signing_network,
             "state_machine": state_machine,
+            "mode": execution_route,
+            "route_status": route_status,
+            "wallet_ready": configured,
+            "wallet_address": None,
+            "balance_ready": False,
+            "atusdt_balance": None,
+            "signing_ready": live_ready or simulation_ready,
+            "latency_ms": latency_ms,
+            "execution_ready": live_ready or simulation_ready,
             "simulation_ready": simulation_ready,
             "live_ready": live_ready,
             "execution_engine": execution_engine,
@@ -1008,6 +1044,134 @@ class SoDEXService:
             )
 
         return normalized
+
+    def claim_faucet(self, address: str) -> Dict[str, Any]:
+        """Claim ETH from testnet faucet for SoDEX trading.
+
+        For testnet networks, this requests native tokens from the official faucet.
+        Mainnet networks do not have faucets.
+
+        Args:
+            address: The wallet address to receive faucet tokens
+
+        Returns:
+            Dict with status, message, and transaction details
+        """
+        if not self.is_available():
+            return {
+                "success": False,
+                "status": "UNAVAILABLE",
+                "message": "SoDEX service not configured. Set SODEX_API_URL.",
+            }
+
+        if not self.is_testnet():
+            return {
+                "success": False,
+                "status": "NOT_APPLICABLE",
+                "message": "Faucet is only available on testnet. Current network is mainnet.",
+            }
+
+        if not address or not Web3.is_address(address):
+            return {
+                "success": False,
+                "status": "INVALID_ADDRESS",
+                "message": "Invalid wallet address provided.",
+            }
+
+        try:
+            checksum_address = Web3.to_checksum_address(address)
+
+            faucet_url = "https://faucet.quicknode.com/linea/sepolia"
+            payload = {"address": checksum_address}
+
+            response = self.session.post(
+                faucet_url,
+                json=payload,
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    return {
+                        "success": True,
+                        "status": "CLAIMED",
+                        "message": f"Successfully claimed testnet ETH for {checksum_address}",
+                        "address": checksum_address,
+                        "amount": data.get("amount", "0.01"),
+                        "tx_hash": data.get("transactionHash") or data.get("txHash"),
+                        "faucet_url": faucet_url,
+                    }
+
+            if response.status_code == 429:
+                return {
+                    "success": False,
+                    "status": "RATE_LIMITED",
+                    "message": "You have already claimed from the faucet. Please wait before claiming again.",
+                    "address": checksum_address,
+                }
+
+            if response.status_code == 400:
+                return {
+                    "success": False,
+                    "status": "ALREADY_CLAIMED",
+                    "message": "Address has already received faucet funds recently.",
+                    "address": checksum_address,
+                }
+
+            return {
+                "success": False,
+                "status": "FAUCET_ERROR",
+                "message": f"Faucet request failed with status {response.status_code}: {response.text}",
+                "address": checksum_address,
+            }
+
+        except requests.exceptions.Timeout:
+            return {
+                "success": False,
+                "status": "TIMEOUT",
+                "message": "Faucet request timed out. The service may be busy.",
+                "address": address,
+            }
+        except Exception as e:
+            logger.error(f"Faucet claim failed: {e}")
+            return {
+                "success": False,
+                "status": "ERROR",
+                "message": f"Faucet claim failed: {str(e)}",
+                "address": address,
+            }
+
+    def get_faucet_info(self) -> Dict[str, Any]:
+        """Get faucet information for the current network.
+
+        Returns:
+            Dict with faucet availability, URL, and network details
+        """
+        if not self.is_available():
+            return {
+                "available": False,
+                "status": "UNAVAILABLE",
+                "message": "SoDEX service not configured.",
+            }
+
+        network_config = self.get_signing_network_config()
+        chain_id = network_config.get("chainId") if network_config else 0
+        is_testnet = self.is_testnet()
+
+        return {
+            "available": is_testnet,
+            "status": "AVAILABLE" if is_testnet else "NOT_APPLICABLE",
+            "is_testnet": is_testnet,
+            "chain_id": chain_id,
+            "chain_name": network_config.get("chainName", "Unknown") if network_config else "Unknown",
+            "faucet_url": "https://faucet.quicknode.com/linea/sepolia" if is_testnet else None,
+            "message": (
+                "Testnet faucet available for Linea Sepolia ETH."
+                if is_testnet
+                else "No faucet available on mainnet."
+            ),
+        }
 
 
 sodex_service = SoDEXService()

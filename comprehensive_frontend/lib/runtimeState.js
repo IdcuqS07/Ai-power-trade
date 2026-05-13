@@ -54,6 +54,8 @@ export function resolveSodexRuntimeState({
   chainId = null,
 } = {}) {
   const configured = Boolean(sodexStatus?.configured);
+  // Prefer backend state_machine state directly
+  const backendStateMachine = sodexStatus?.state_machine || sodexStatus?.stateMachine || {};
   const backendEngine = sodexStatus?.executionEngine || {};
   const backendChecks = backendEngine.healthChecks || {};
   const backendHealth = String(backendEngine?.health || '').toUpperCase();
@@ -71,30 +73,45 @@ export function resolveSodexRuntimeState({
       runtimeChainId !== signingChainId
   );
   const liveReady = Boolean(
-    configured &&
-      sodexStatus?.canPrepareOrder &&
+    backendStateMachine?.live_ready === true ||
+    (backendEngine?.liveReady && sodexStatus?.canPrepareOrder &&
       walletConnected &&
       !needsSigningSwitch &&
-      backendHealth !== 'DEGRADED'
+      backendHealth !== 'DEGRADED')
   );
   const simulationReady = Boolean(
-    walletConnected &&
-      !liveReady &&
-      (configured ||
-        sodexStatus?.stateMachine?.state === SODEX_STATES.SIMULATION_READY ||
-        backendEngine?.simulationReady)
+    !liveReady &&
+    (backendStateMachine?.simulation_ready === true ||
+      sodexStatus?.simulationReady ||
+      backendStateMachine?.state === SODEX_STATES.SIMULATION_READY ||
+      backendEngine?.simulationReady ||
+      configured)
   );
 
-  let state = SODEX_STATES.DISCONNECTED;
+  // Use backend state_machine state directly when available
+  const backendState = backendStateMachine?.state;
+  let state = backendState || SODEX_STATES.DISCONNECTED;
 
-  if (configured && backendHealth === 'DEGRADED') {
-    state = SODEX_STATES.DEGRADED;
-  } else if (liveReady) {
+  // Only use fallbacks when backend state is completely unavailable
+  if (!backendState && !backendStateMachine?.state) {
+    if (backendHealth === 'DEGRADED') {
+      state = SODEX_STATES.DEGRADED;
+    } else if (liveReady) {
+      state = SODEX_STATES.LIVE_READY;
+    } else if (simulationReady) {
+      state = SODEX_STATES.SIMULATION_READY;
+    } else if (walletConnected && configured) {
+      state = SODEX_STATES.CONNECTED;
+    }
+  }
+
+  // Preserve SIMULATION_READY state even if liveReady becomes true
+  // The backend decides when to upgrade to LIVE_READY
+  if (backendState && state === SODEX_STATES.SIMULATION_READY) {
+    // Keep SIMULATION_READY as-is - backend is authoritative
+  } else if (state === SODEX_STATES.SIMULATION_READY && liveReady && !backendState) {
+    // Only upgrade if backend didn't explicitly set SIMULATION_READY
     state = SODEX_STATES.LIVE_READY;
-  } else if (simulationReady) {
-    state = SODEX_STATES.SIMULATION_READY;
-  } else if (walletConnected) {
-    state = SODEX_STATES.CONNECTED;
   }
 
   const stateMeta = buildStateMeta(state);

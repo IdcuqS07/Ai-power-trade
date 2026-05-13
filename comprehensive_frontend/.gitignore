@@ -1,2 +1,6 @@
 .vercel
 .next-dev/
+.env
+.env.*
+!.env.example
+.env*.local

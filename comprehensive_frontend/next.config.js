@@ -24,6 +24,15 @@ const nextConfig = {
     pagesBufferLength: 5,
   },
 
+  async rewrites() {
+    return [
+      {
+        source: '/api/backend/:path*',
+        destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/:path*`,
+      },
+    ];
+  },
+
   async redirects() {
     return [
       // Collapse legacy workspace surfaces into the core product views.

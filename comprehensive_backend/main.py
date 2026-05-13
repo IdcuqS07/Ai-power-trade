@@ -438,6 +438,19 @@ class AIPredictor:
 
     def generate_signal(self, symbol: str) -> Dict:
         """Generate AI trading signal"""
+        if symbol not in trading_state["price_history"]:
+            return {
+                "signal": "HOLD",
+                "confidence": 0.5,
+                "buy_score": 0,
+                "sell_score": 0,
+                "risk_score": 50,
+                "position_size": 0,
+                "indicators": {},
+                "error": f"Symbol {symbol} not found in price history",
+                "timestamp": datetime.now().isoformat()
+            }
+
         prices = trading_state["price_history"][symbol]
         indicators = self.calculate_indicators(prices)
 
@@ -2383,6 +2396,52 @@ async def claim_faucet_tokens(request: dict):
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/faucet/claim")
+async def claim_faucet_native(request: dict):
+    """
+    Claim native tokens (ETH/BNB/MATIC, etc.) from testnet faucet.
+    For SoDEX integrated networks, this calls the Linea Sepolia faucet.
+    """
+    try:
+        address = request.get("address")
+        if not address:
+            raise HTTPException(status_code=400, detail="Address required")
+
+        # Try SoDEX faucet first
+        result = sodex_service.claim_faucet(address)
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "data": result
+            }
+
+        # If SoDEX faucet unavailable, return the error
+        status = result.get("status", "UNKNOWN")
+        raise HTTPException(
+            status_code=400 if status in ["INVALID_ADDRESS", "RATE_LIMITED", "ALREADY_CLAIMED"] else 503,
+            detail=result.get("message", "Faucet claim failed")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/faucet/info")
+async def get_faucet_info():
+    """Get faucet availability and information for the current network."""
+    try:
+        info = sodex_service.get_faucet_info()
+        return {
+            "success": True,
+            "data": info
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

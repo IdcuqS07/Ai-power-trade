@@ -972,7 +972,13 @@ function MainDecisionSection({
             <div className={styles['info-row']}>
               <span>Execution Route</span>
               <strong style={{ color: readinessState.sodex?.tone || 'var(--text)' }}>
-                {readinessState.executionModeLabel || 'Internal fallback'}
+                {readinessState.sodex?.executionMode
+                  ? readinessState.sodex.executionMode === 'live'
+                    ? 'SoDEX Live'
+                    : readinessState.sodex.executionMode === 'simulation'
+                      ? 'SoDEX Simulation'
+                      : 'Preview'
+                  : readinessState.executionModeLabel || 'Internal fallback'}
               </strong>
             </div>
             <div className={styles['info-row']}>
@@ -1177,11 +1183,13 @@ function RightExecutionPanel({
             <div className={styles['compact-item']}>
               <span>Route</span>
               <strong style={{ color: sodexTone }}>
-                {liveSodexReady
-                  ? sodexStatus?.executionLabel || 'SoDEX Live'
-                  : sodexRuntime.simulationReady
-                    ? 'Simulation Ready'
-                    : sodexStatus?.executionLabel || 'Preview'}
+                {sodexStatus?.state_machine?.execution_mode
+                  ? sodexStatus.state_machine.execution_mode === 'live'
+                    ? 'SoDEX Live'
+                    : sodexStatus.state_machine.execution_mode === 'simulation'
+                      ? 'Simulation'
+                      : 'Preview'
+                  : sodexStatus?.executionLabel || 'Preview'}
               </strong>
             </div>
             <div className={styles['compact-item']}>
