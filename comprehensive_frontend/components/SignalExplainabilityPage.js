@@ -348,8 +348,8 @@ function getDataSourceLabel(kind, status = {}) {
     return kind === 'market' ? 'Cached market overlay active' : 'Cached explainability active';
   }
 
-  if (normalized.includes('demo') || normalized.includes('fallback')) {
-    return kind === 'market' ? 'Demo market overlay active' : 'Demo explainability active';
+  if (normalized.includes('demo') || normalized.includes('fallback') || normalized.includes('curated')) {
+    return kind === 'market' ? 'Fallback market context active' : 'Fallback explainability active';
   }
 
   return kind === 'market' ? 'Live market overlay' : 'Live explainability layer';
@@ -1185,13 +1185,18 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           return;
         }
 
+        const payloadSource = String(payload?.source || '').toLowerCase();
         const nextOverlay = {
           prices: payload?.data || {},
-          source: payload?.source === 'cache' ? 'Cached market overlay' : 'Live market overlay',
+          source: payload?.fallback
+            ? payload?.source || 'Fallback market overlay'
+            : payloadSource === 'cache'
+              ? 'Cached market overlay'
+              : 'Live market overlay',
           updatedAt: Date.now(),
           loading: false,
           refreshing: false,
-          note: null,
+          note: payload?.fallback ? payload?.message || 'Temporary fallback market context is active.' : null,
         };
 
         console.log('[AI Explainer] Market prices loaded:', {
@@ -1518,7 +1523,9 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const ringCircumference = 2 * Math.PI * 70;
   const ringOffset = ringCircumference - (confidencePercent / 100) * ringCircumference;
   const demoExplain = useMemo(() => buildDemoExplainability(signal, marketOverlay.prices[activeSymbol]), [activeSymbol, marketOverlay.prices, signal]);
-  const hasLiveExplain = Boolean(intelligence.explain);
+  const hasLiveExplain = Boolean(
+    intelligence.explain && !/fallback|demo|curated/i.test(String(explainStatus.source || ''))
+  );
   const explainOverlay = intelligence.explain || demoExplain;
 
   const technicalItems = useMemo(() => {
@@ -1554,7 +1561,10 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
   const recommendation = getRecommendationSignal(explainOverlay, signal.signal);
   const marketPrice = Number(marketOverlay.prices[activeSymbol]?.price ?? signal.price ?? 0);
   const marketChange = Number(marketOverlay.prices[activeSymbol]?.change_24h ?? signal.change24h ?? 0);
-  const hasLivePrice = Boolean(marketOverlay.prices[activeSymbol]?.price);
+  const hasLivePrice = Boolean(
+    marketOverlay.prices[activeSymbol]?.price &&
+      !/fallback|demo|curated/i.test(String(marketOverlay.source || ''))
+  );
   const priceSource = hasLivePrice ? marketOverlay.source : 'Fallback data';
 
   console.log('[AI Explainer] Price data:', {
@@ -1881,27 +1891,27 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     ? 'Loading live overlay...'
     : hasLiveExplain
       ? formatUpdateTime(explainStatus.updatedAt)
-      : 'Demo fallback active';
+      : 'Fallback active';
   const appHref = `/app?symbol=${activeSymbol}`;
   const explainerHref = `/ai-explainer?symbol=${activeSymbol}`;
   const liveFeedAlert = useMemo(() => {
     if (explainError && marketError) {
       return {
-        title: 'Live explainer preview is active.',
+        title: 'Live overlay is temporarily unavailable.',
         message: `${explainError} Market context also failed to refresh.`,
       };
     }
 
     if (explainError) {
       return {
-        title: 'Live explainability preview is active.',
+        title: 'Live explainability is temporarily unavailable.',
         message: explainError,
       };
     }
 
     if (marketError) {
       return {
-        title: 'Live market context preview is active.',
+        title: 'Live market context is temporarily unavailable.',
         message: marketError,
       };
     }
@@ -1936,7 +1946,10 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     if (explainStatus.note) {
       return {
         tone: 'warning',
-        title: explainSourceLabel === 'Demo explainability active' ? 'Demo explainability active.' : 'Cached explainability active.',
+        title:
+          explainSourceLabel === 'Fallback explainability active'
+            ? 'Fallback explainability active.'
+            : 'Cached explainability active.',
         detail: explainStatus.note,
       };
     }
@@ -1944,7 +1957,10 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     if (marketOverlay.note) {
       return {
         tone: 'warning',
-        title: marketSourceLabel === 'Demo market overlay active' ? 'Demo market overlay active.' : 'Cached market overlay active.',
+        title:
+          marketSourceLabel === 'Fallback market context active'
+            ? 'Fallback market context active.'
+            : 'Cached market overlay active.',
         detail: marketOverlay.note,
       };
     }
@@ -1964,7 +1980,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       {
         label: 'AI Recommendation',
         value: recommendation,
-        meta: hasLiveExplain ? `${liveExplain.indicators_analyzed} live inputs` : 'Demo explainability layer',
+        meta: hasLiveExplain ? `${liveExplain.indicators_analyzed} live inputs` : 'Fallback explainability layer',
         tone: getRecommendationTone(recommendation),
       },
       {
@@ -1981,7 +1997,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
           ? 'Showing the current snapshot while live analysis refreshes.'
           : hasLiveExplain
             ? 'Live explainability layer'
-            : 'Fallback explainability layer',
+            : 'Temporary fallback explainability layer',
       },
       {
         label: 'Community Sentiment',
@@ -2016,7 +2032,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
 
   const recommendationSummaryCaption = hasLiveExplain
     ? `${liveExplain.indicators_analyzed} live indicators are contributing to this call, ${sentimentSummary.label.toLowerCase()} sentiment is in the backdrop, and the current overlay still reads as ${confidenceLabel.toLowerCase()} conviction.`
-    : 'The live explainability layer is unavailable, so this recommendation is using the same demo-style fallback as the original AI Explainer.';
+    : 'The live explainability layer is temporarily unavailable, so this recommendation is using the latest fallback context until the backend responds again.';
 
   const handleWalletAction = async () => {
     if (wallet.initializing) {

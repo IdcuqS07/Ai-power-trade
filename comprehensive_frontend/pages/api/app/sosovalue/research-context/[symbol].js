@@ -1,7 +1,7 @@
 import { buildBackendApiUrl } from '../../../../../lib/backendOrigin';
 import { researchFeed } from '../../../../../lib/premiumData';
 
-const REQUEST_TIMEOUT_MS = 30000; // Increased to 30s for large ETF responses
+const REQUEST_TIMEOUT_MS = 8000; // Keep below serverless limits so fallback can still respond
 const researchSnapshotCache = new Map();
 
 function buildCacheKey(symbol, newsLimit) {

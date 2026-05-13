@@ -1,7 +1,7 @@
 import { resolveBackendOrigin } from '../../../lib/backendOrigin';
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 30000;  // 30 seconds
-const EXTENDED_REQUEST_TIMEOUT_MS = 60000; // 60 seconds
+const DEFAULT_REQUEST_TIMEOUT_MS = 8000;   // Keep below common serverless timeouts
+const EXTENDED_REQUEST_TIMEOUT_MS = 12000; // Longer for heavier endpoints, still below platform limits
 const LOW_PRIORITY_BACKEND_PREFIXES = [
   ['auth'],
   ['user'],
