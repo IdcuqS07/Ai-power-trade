@@ -3,12 +3,27 @@ import { buildBackendApiUrl } from '../../lib/backendOrigin';
 
 export default async function handler(req, res) {
   try {
-    const response = await fetch(buildBackendApiUrl('trades/performance'), {
+    const targetUrl = new URL(buildBackendApiUrl('trades/performance'));
+
+    Object.entries(req.query || {}).forEach(([key, value]) => {
+      if (typeof value === 'undefined') {
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((entry) => targetUrl.searchParams.append(key, String(entry)));
+        return;
+      }
+
+      targetUrl.searchParams.set(key, String(value));
+    });
+
+    const response = await fetch(targetUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 10000
+      signal: AbortSignal.timeout(8000),
     })
     
     if (!response.ok) {

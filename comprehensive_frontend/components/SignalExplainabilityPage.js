@@ -191,7 +191,7 @@ function fetchExplainabilityBundle(symbol, options = {}) {
     params.set('force_refresh', 'true');
   }
 
-  return fetchJson(`/api/backend/ai/explainability/${encodeURIComponent(symbol)}?${params.toString()}`, {
+  return fetchJson(`/api/ai/explainability/${encodeURIComponent(symbol)}?${params.toString()}`, {
     signal: options.signal,
   });
 }
@@ -202,7 +202,7 @@ function fetchSymbolPerformance(symbol, options = {}) {
     limit: '120',
   });
 
-  return fetchJson(`/api/backend/trades/performance?${params.toString()}`, {
+  return fetchJson(`/api/performance?${params.toString()}`, {
     signal: options.signal,
   });
 }
@@ -1349,6 +1349,9 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       const explainBundleSucceeded = results[0].status === 'fulfilled' && Boolean(results[0].value?.data);
       const explainBundle = results[0].status === 'fulfilled' ? results[0].value || null : null;
       const bundleData = explainBundle?.data || {};
+      const explainBundleIsFallback = Boolean(
+        explainBundle?.fallback || /fallback|curated/i.test(String(explainBundle?.source || ''))
+      );
       const performancePayload = results[1].status === 'fulfilled' ? results[1].value || null : null;
       const explainErrorMessage =
         results[0].status === 'rejected'
@@ -1367,9 +1370,11 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
       const nextPerformance =
         performancePayload?.data || (explainBundleSucceeded ? bundleData.performance || null : null) || cached?.performance || null;
       const nextSource = explainBundleSucceeded
-        ? explainBundle?.cache_hit
-          ? 'Cached explainability layer'
-          : 'Live explainability layer'
+        ? explainBundleIsFallback
+          ? explainBundle?.source || 'Fallback explainability layer'
+          : explainBundle?.cache_hit
+            ? 'Cached explainability layer'
+            : 'Live explainability layer'
         : nextExplain
           ? 'Cached explainability layer'
           : cached?.source || 'Demo explainability layer';
@@ -1413,12 +1418,14 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
         loading: false,
         refreshing: false,
         note: explainBundleSucceeded
-          ? null
+          ? explainBundleIsFallback
+            ? explainBundle?.message || 'Temporary fallback explainability is active until the live backend responds again.'
+            : null
           : nextExplain
             ? `Live explainability is unavailable right now, so the latest ${activeSymbol} review stays visible.`
             : `Live explainability is unavailable right now, so demo explainability is active for ${activeSymbol} until retry.`,
       });
-      setExplainError(explainErrorMessage);
+      setExplainError(explainBundleSucceeded ? null : explainErrorMessage);
       setSignalRuntime(nextRuntime);
 
       if (nextExplain) {
