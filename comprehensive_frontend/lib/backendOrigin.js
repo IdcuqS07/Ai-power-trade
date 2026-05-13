@@ -1,4 +1,5 @@
-const LOCAL_BACKEND_FALLBACK = 'http://127.0.0.1:8000';
+export const LOCAL_BACKEND_FALLBACK = 'http://127.0.0.1:8000';
+export const PRODUCTION_BACKEND_FALLBACK = 'https://ai-powertrade.duckdns.org';
 
 function normalizeOrigin(value) {
   const normalized = String(value || '').trim();
@@ -20,7 +21,13 @@ export function resolveBackendOrigin() {
     .map(normalizeOrigin)
     .find(Boolean);
 
-  return configuredOrigin || LOCAL_BACKEND_FALLBACK;
+  if (configuredOrigin) {
+    return configuredOrigin;
+  }
+
+  return process.env.NODE_ENV === 'development'
+    ? LOCAL_BACKEND_FALLBACK
+    : PRODUCTION_BACKEND_FALLBACK;
 }
 
 export function buildBackendApiUrl(path = '') {

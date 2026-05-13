@@ -1,4 +1,5 @@
 import { cache } from './cache';
+import { resolveBackendOrigin } from '../lib/backendOrigin';
 
 /**
  * Fetch with automatic caching
@@ -43,7 +44,7 @@ export async function cachedFetch(url, options = {}, cacheTTL = 30) {
  * Fetch market prices with caching
  */
 export async function fetchMarketPrices(cacheTTL = 10) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com';
+  const API_URL = resolveBackendOrigin();
   return cachedFetch(`${API_URL}/api/market/prices`, {}, cacheTTL);
 }
 
@@ -51,7 +52,7 @@ export async function fetchMarketPrices(cacheTTL = 10) {
  * Fetch specific coin price with caching
  */
 export async function fetchCoinPrice(symbol, cacheTTL = 10) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com';
+  const API_URL = resolveBackendOrigin();
   return cachedFetch(`${API_URL}/api/market/prices/${symbol}`, {}, cacheTTL);
 }
 
@@ -59,7 +60,7 @@ export async function fetchCoinPrice(symbol, cacheTTL = 10) {
  * Fetch user profile with caching
  */
 export async function fetchUserProfile(userId, cacheTTL = 60) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com';
+  const API_URL = resolveBackendOrigin();
   return cachedFetch(`${API_URL}/api/users/${userId}`, {}, cacheTTL);
 }
 
@@ -67,7 +68,7 @@ export async function fetchUserProfile(userId, cacheTTL = 60) {
  * Fetch wallet balance with caching
  */
 export async function fetchWalletBalance(address, cacheTTL = 30) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com';
+  const API_URL = resolveBackendOrigin();
   return cachedFetch(`${API_URL}/api/wallet/${address}`, {}, cacheTTL);
 }
 

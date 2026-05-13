@@ -183,6 +183,9 @@ Optional frontend env:
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
+For deployed frontend environments like Vercel, set `NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_BACKEND_URL`
+to the Railway backend URL. The production frontend should not fall back to localhost.
+
 ### Backend
 
 ```bash

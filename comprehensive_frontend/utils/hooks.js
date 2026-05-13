@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { cache } from './cache';
+import { resolveBackendOrigin } from '../lib/backendOrigin';
 
 /**
  * Custom hook for fetching data with caching
@@ -60,7 +61,7 @@ export function useCachedFetch(url, cacheTTL = 30) {
  * Hook for market prices with auto-refresh
  */
 export function useMarketPrices(refreshInterval = 10000) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://belle-creativity-mile-dream.trycloudflare.com';
+  const API_URL = resolveBackendOrigin();
   const { data, loading, error } = useCachedFetch(`${API_URL}/api/market/prices`, 10);
 
   useEffect(() => {

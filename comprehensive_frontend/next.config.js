@@ -1,9 +1,14 @@
+const LOCAL_BACKEND_FALLBACK = 'http://127.0.0.1:8000';
+const PRODUCTION_BACKEND_FALLBACK = 'https://ai-powertrade.duckdns.org';
+
 /** @type {import('next').NextConfig} */
 const backendOrigin =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   process.env.BACKEND_URL ||
-  'http://localhost:8000';
+  (process.env.NODE_ENV === 'development'
+    ? LOCAL_BACKEND_FALLBACK
+    : PRODUCTION_BACKEND_FALLBACK);
 
 const nextConfig = {
   reactStrictMode: true,
