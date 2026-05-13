@@ -42,7 +42,7 @@ CANDLE_INTERVAL_MS = {
 }
 DEFAULT_CANDLE_LIMIT = 48
 MAX_CANDLE_LIMIT = 500
-EXPLAINABILITY_CACHE_DURATION_SECONDS = 1800
+EXPLAINABILITY_CACHE_DURATION_SECONDS = 900
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -2573,7 +2573,7 @@ async def startup_background_services():
         except Exception as e:
             logger.warning(f"Signal scheduler failed to start: {e}")
     else:
-        logger.info("💤 Signal scheduler disabled (using on-demand with 30min manual signal cache)")
+        logger.info("💤 Signal scheduler disabled (using on-demand with 15min manual signal cache)")
 
     # Start settlement worker
     if not env_flag("ENABLE_SETTLEMENT_WORKER", False):
@@ -3549,7 +3549,7 @@ async def get_ai_explainability_bundle(
 ):
     """
     Aggregate AI explainability with smart caching.
-    Signals are generated at most once every 30 minutes per symbol.
+    Signals are generated at most once every 15 minutes per symbol.
     Use cached_only=true to read the latest snapshot without generating a new one.
     Use force_refresh=true to request a new snapshot once the cooldown has expired.
     """
@@ -3575,7 +3575,7 @@ async def get_ai_explainability_bundle(
             cached_only=cached_only,
             generation_locked=bool(force_refresh),
             message=(
-                f"Fresh AI signals are limited to one generation every 30 minutes. "
+                f"Fresh AI signals are limited to one generation every 15 minutes. "
                 f"The latest cached {normalized_symbol} signal is still active."
                 if force_refresh
                 else None
@@ -3727,7 +3727,7 @@ async def get_ai_explainability_bundle(
         "generation_allowed": False,
         "generation_locked": False,
         "signal_available": True,
-        "message": "Fresh signal generated. The next manual generation window opens in 30 minutes.",
+        "message": "Fresh signal generated. The next manual generation window opens in 15 minutes.",
     }
 
     # Save to cache

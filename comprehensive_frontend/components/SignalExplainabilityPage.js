@@ -414,19 +414,23 @@ function formatRefreshWindow(seconds) {
     return 'now';
   }
 
-  const totalMinutes = Math.ceil(totalSeconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
 
-  if (hours && minutes) {
-    return `${hours}h ${minutes}m`;
-  }
+  const parts = [];
 
   if (hours) {
-    return `${hours}h`;
+    parts.push(`${hours}h`);
   }
 
-  return `${totalMinutes}m`;
+  if (minutes || hours) {
+    parts.push(`${minutes}m`);
+  }
+
+  parts.push(`${remainingSeconds}s`);
+
+  return parts.join(' ');
 }
 
 function formatCompactCount(value) {
@@ -1863,7 +1867,7 @@ export default function SignalExplainabilityPage({ initialSymbol = 'BTC' }) {
     signalRuntime.message ||
     (signalRuntime.generationAllowed
       ? `Generate a fresh ${activeSymbol} signal snapshot from the live explainability stack.`
-      : `The latest ${activeSymbol} signal snapshot is still inside the 30 minute cooldown window.`);
+      : `The latest ${activeSymbol} signal snapshot is still inside the 15 minute cooldown window.`);
 
   const confidenceLabel = signal.confidenceLabel || deriveConfidenceLabel(confidencePercent / 100);
   const assetModeTitle = signal?.liveSnapshot
