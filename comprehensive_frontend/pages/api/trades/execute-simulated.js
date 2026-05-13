@@ -1,4 +1,4 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
+import { buildBackendApiUrl } from '../../../lib/backendOrigin';
 
 function buildLocalFallback(body = {}, message = 'Trade saved in local preview mode', backendData = {}) {
   const simulationReady = body?.simulation_mode === 'sodex_simulation_ready';
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
     });
 
     const backendTimeoutMs = liveExecutionRequested ? 12000 : 5000;
-    const backendResponse = await fetch(`${API_URL}/api/trades/execute`, {
+    const backendResponse = await fetch(buildBackendApiUrl('trades/execute'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

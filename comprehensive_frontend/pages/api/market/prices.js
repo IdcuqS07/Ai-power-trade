@@ -1,11 +1,11 @@
 // API Proxy to bypass CORS and Mixed Content issues
+import { buildBackendApiUrl } from '../../../lib/backendOrigin';
+
 export default async function handler(req, res) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
-  
   try {
-    console.log('[API Proxy] Fetching from:', `${API_URL}/api/market/prices`)
+    console.log('[API Proxy] Fetching from:', buildBackendApiUrl('market/prices'))
     
-    const response = await fetch(`${API_URL}/api/market/prices`, {
+    const response = await fetch(buildBackendApiUrl('market/prices'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

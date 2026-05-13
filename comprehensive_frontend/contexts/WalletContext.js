@@ -5,6 +5,7 @@ import {
   getChainLabel,
   getDefaultChainConfig,
   normalizeChainId,
+  parseChainIdValue,
   resolveBlockchainConfig,
   shortenAddress,
 } from '../lib/walletNetwork';
@@ -275,8 +276,9 @@ export function WalletProvider({ children }) {
 
     const readBalanceFromWalletProvider = async () => {
       const provider = readProvider();
-      const contractAddress = walletState.tokenMeta?.contractAddress;
-      const decimals = walletState.tokenMeta?.decimals ?? 18;
+      const activeTokenMeta = walletState.tokenMeta?.contractAddress ? walletState.tokenMeta : FALLBACK_TOKEN;
+      const contractAddress = activeTokenMeta.contractAddress;
+      const decimals = activeTokenMeta.decimals ?? 18;
       const targetChainId = normalizeChainId(walletState.networkConfig?.chainId);
 
       if (!provider || !contractAddress) {
@@ -326,6 +328,87 @@ export function WalletProvider({ children }) {
       };
     };
 
+    const readBalanceFromPublicRpc = async () => {
+      const activeTokenMeta = walletState.tokenMeta?.contractAddress ? walletState.tokenMeta : FALLBACK_TOKEN;
+      const contractAddress = activeTokenMeta.contractAddress;
+      const decimals = activeTokenMeta.decimals ?? 18;
+      const configuredChainId = parseChainIdValue(walletState.networkConfig?.chainId) || 80002;
+      const fallbackNetwork = getDefaultChainConfig(configuredChainId);
+      const rpcUrls = [
+        ...(Array.isArray(walletState.networkConfig?.rpcUrls) ? walletState.networkConfig.rpcUrls : []),
+        ...(Array.isArray(fallbackNetwork.rpcUrls) ? fallbackNetwork.rpcUrls : []),
+      ].filter((value, index, values) => typeof value === 'string' && value.trim() && values.indexOf(value) === index);
+
+      if (!contractAddress || !rpcUrls.length) {
+        return null;
+      }
+
+      for (const rpcUrl of rpcUrls) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+          const response = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: `atUSDT-balance-${Date.now()}`,
+              method: 'eth_call',
+              params: [
+                {
+                  to: contractAddress,
+                  data: encodeErc20BalanceOf(nextAddress),
+                },
+                'latest',
+              ],
+            }),
+            signal: controller.signal,
+          });
+          window.clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            throw new Error(`RPC returned ${response.status}`);
+          }
+
+          const payload = await response.json();
+
+          if (payload?.error) {
+            throw new Error(payload.error?.message || 'RPC returned an error');
+          }
+
+          const balance = parseTokenAmountFromHex(payload?.result, decimals);
+
+          if (!Number.isFinite(balance)) {
+            throw new Error('RPC returned an invalid balance');
+          }
+
+          safeSetWalletState((current) => ({
+            ...current,
+            tokenBalance: balance,
+            tokenBalanceStatus: 'ready',
+            tokenBalanceSource: 'public-rpc',
+            tokenBalanceError: '',
+            canClaim: false,
+            cooldownSeconds: 0,
+          }));
+
+          return {
+            address: nextAddress,
+            balance,
+            can_claim_faucet: false,
+            cooldown_seconds: 0,
+            source: 'public-rpc',
+          };
+        } catch (error) {
+          console.warn('[WalletContext] Public RPC balance fallback failed:', rpcUrl, error);
+        }
+      }
+
+      return null;
+    };
+
     try {
       console.log('[WalletContext] Fetching balance for:', nextAddress);
       const payload = await fetchWalletJson(`blockchain/balance/${nextAddress}`);
@@ -348,9 +431,23 @@ export function WalletProvider({ children }) {
       console.error('[WalletContext] Balance fetch failed:', error);
 
       try {
-        return await readBalanceFromWalletProvider();
+        const providerBalance = await readBalanceFromWalletProvider();
+
+        if (providerBalance) {
+          return providerBalance;
+        }
       } catch (providerError) {
         console.error('[WalletContext] Wallet RPC balance fallback failed:', providerError);
+      }
+
+      try {
+        const publicRpcBalance = await readBalanceFromPublicRpc();
+
+        if (publicRpcBalance) {
+          return publicRpcBalance;
+        }
+      } catch (publicRpcError) {
+        console.error('[WalletContext] Public RPC balance fallback failed:', publicRpcError);
       }
 
       safeSetWalletState((current) => ({

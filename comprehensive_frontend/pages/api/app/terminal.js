@@ -8,13 +8,13 @@ import {
   normalizeChainId,
   resolveBlockchainConfig,
 } from '../../../lib/walletNetwork';
+import { buildBackendApiUrl } from '../../../lib/backendOrigin';
 import {
   buildAptIntelligenceScore,
   clamp,
   resolveSignalType,
 } from '../../../lib/aptIntelligence';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
 const REQUEST_TIMEOUT_MS = 3000;
 const SODEX_TESTNET_CHAIN_ID = 138565;
 const TERMINAL_SYMBOLS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'MATIC', 'LINK'];
@@ -250,7 +250,7 @@ function buildChartSeriesFromCandles(candlePayload = {}) {
 }
 
 async function fetchBackendJson(path) {
-  const response = await fetch(`${API_URL}/api/${path}`, {
+  const response = await fetch(buildBackendApiUrl(path), {
     headers: {
       'Content-Type': 'application/json',
     },

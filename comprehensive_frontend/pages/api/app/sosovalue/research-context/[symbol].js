@@ -1,4 +1,5 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
+import { buildBackendApiUrl } from '../../../../../lib/backendOrigin';
+
 const REQUEST_TIMEOUT_MS = 30000; // Increased to 30s for large ETF responses
 
 export default async function handler(req, res) {
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const response = await fetch(
-      `${API_URL}/api/sosovalue/research-context/${encodeURIComponent(symbol)}`,
+      buildBackendApiUrl(`sosovalue/research-context/${encodeURIComponent(symbol)}`),
       { signal: controller.signal }
     );
 

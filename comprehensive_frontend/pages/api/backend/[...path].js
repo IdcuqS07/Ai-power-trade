@@ -1,4 +1,5 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
+import { resolveBackendOrigin } from '../../../lib/backendOrigin';
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;  // 30 seconds
 const EXTENDED_REQUEST_TIMEOUT_MS = 60000; // 60 seconds
 const LOW_PRIORITY_BACKEND_PREFIXES = [
@@ -103,7 +104,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const url = new URL(`${API_URL}/api/${pathSegments.join('/')}`);
+  const url = new URL(`${resolveBackendOrigin()}/api/${pathSegments.join('/')}`);
   appendQueryParams(url, req.query);
   const requestTimeoutMs = getRequestTimeoutMs(pathSegments);
 

@@ -1,6 +1,6 @@
 import { aiSignals } from '../../../../lib/premiumData';
+import { resolveBackendOrigin } from '../../../../lib/backendOrigin';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').trim();
 const REQUEST_TIMEOUT_MS = 3000;
 
 function buildFallbackCandles(symbol = 'BTC', interval = '1h', limit = 48) {
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
   const symbol = String(req.query.symbol || 'BTC').toUpperCase();
   const interval = String(req.query.interval || '1h');
   const limit = Number(req.query.limit || 48);
-  const targetUrl = new URL(`${API_URL}/api/market/candles/${encodeURIComponent(symbol)}`);
+  const targetUrl = new URL(`${resolveBackendOrigin()}/api/market/candles/${encodeURIComponent(symbol)}`);
 
   targetUrl.searchParams.set('interval', interval);
   targetUrl.searchParams.set('limit', String(limit));

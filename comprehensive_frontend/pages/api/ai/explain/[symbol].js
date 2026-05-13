@@ -1,10 +1,11 @@
 // API Proxy for AI explanation
+import { buildBackendApiUrl } from '../../../../lib/backendOrigin';
+
 export default async function handler(req, res) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
   const { symbol } = req.query
   
   try {
-    const response = await fetch(`${API_URL}/api/ai/explain/${symbol}`, {
+    const response = await fetch(buildBackendApiUrl(`ai/explain/${symbol}`), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
