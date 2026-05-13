@@ -69,6 +69,105 @@ def build_sentiment_fallback(symbol: str, reason: str = "CoinGecko sentiment una
         "message": reason,
     }
 
+
+def build_research_context_fallback(
+    symbol: str,
+    reason: str,
+    cached_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return a safe research payload when the live provider is unavailable."""
+    normalized_symbol = symbol.upper().strip()
+    fallback_timestamp = datetime.now().isoformat()
+    cached = dict(cached_context or {})
+    latest_news = list(cached.get("latest_news") or [])
+    rationale = list(cached.get("rationale") or [])
+
+    if not rationale:
+        rationale = [
+            f"Live research is temporarily unavailable for {normalized_symbol}.",
+            "The dashboard stays online with cached context or a neutral standby payload while the provider recovers.",
+        ]
+
+    return {
+        "symbol": normalized_symbol,
+        "currency": cached.get("currency"),
+        "summary": rationale[0],
+        "news_count": len(latest_news),
+        "headlineCount": len(latest_news),
+        "catalyst_score": float(cached.get("catalyst_score", 0) or 0),
+        "catalyst_label": cached.get("catalyst_label") or "LOW",
+        "sentiment": cached.get("sentiment") or {
+            "label": "NEUTRAL",
+            "score": 50,
+            "description": "Fallback research sentiment while the live provider recovers.",
+        },
+        "rationale": rationale,
+        "latest_news": latest_news,
+        "articles": latest_news,
+        "macro_regime": (cached.get("macro_context") or {}).get("overall_regime", "UNAVAILABLE"),
+        "macro_context": cached.get("macro_context") or {
+            "overall_regime": "UNAVAILABLE",
+            "error": reason,
+        },
+        "timestamp": cached.get("timestamp") or fallback_timestamp,
+        "fallback": True,
+        "stale": bool(cached),
+        "message": reason,
+        "source": cached.get("source") or ("SoSoValue cache" if cached else "Fallback"),
+        "last_successful_at": cached.get("timestamp"),
+    }
+
+
+def _normalize_price_snapshot(
+    price: float,
+    change_24h: float,
+    high_24h: float,
+    low_24h: float,
+    volume_24h: float,
+    source: str,
+    **extra: Any,
+) -> Dict[str, Any]:
+    snapshot = {
+        "price": round(float(price), 2),
+        "change_24h": round(float(change_24h), 2),
+        "high_24h": round(float(high_24h), 2),
+        "low_24h": round(float(low_24h), 2),
+        "volume_24h": round(float(volume_24h), 2),
+        "source": source,
+    }
+    snapshot.update(extra)
+    return snapshot
+
+
+def _build_cached_price_snapshot(symbol: str, cached_snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not cached_snapshot:
+        return None
+
+    try:
+        price = float(cached_snapshot.get("price") or 0)
+        change_24h = float(cached_snapshot.get("change_24h") or 0)
+        high_24h = float(cached_snapshot.get("high_24h") or price or 0)
+        low_24h = float(cached_snapshot.get("low_24h") or price or 0)
+        volume_24h = float(cached_snapshot.get("volume_24h") or 0)
+    except (TypeError, ValueError):
+        logger.warning("Skipping invalid cached market snapshot for %s", symbol)
+        return None
+
+    if price <= 0:
+        return None
+
+    cached_source = cached_snapshot.get("source") or "Cached"
+    return _normalize_price_snapshot(
+        price=price,
+        change_24h=change_24h,
+        high_24h=high_24h,
+        low_24h=low_24h,
+        volume_24h=volume_24h,
+        source=f"{cached_source} (cached)",
+        stale=True,
+        cached_fallback=True,
+    )
+
 # Import Binance API, Binance Trading and Backtesting
 from binance_api import binance_api
 from binance_trading import binance_trading
@@ -781,6 +880,9 @@ performance_cache = {"data": None, "timestamp": 0, "ttl": 300}  # 5 minutes cach
 # Prices cache to reduce API calls - Optimized for speed
 prices_cache = {"data": None, "timestamp": 0, "ttl": 90}  # 90 seconds cache (1.5 minutes)
 
+# Keep the last successful SoSoValue research snapshot per symbol for graceful fallback.
+sosovalue_research_cache = {}
+
 # Dashboard cache for faster loading - Increased TTL
 dashboard_cache = {"data": {}, "timestamp": {}, "ttl": 60}  # 60 seconds per symbol (1 minute)
 
@@ -1023,9 +1125,13 @@ async def get_prices():
         return {"success": True, "data": prices_cache["data"], "source": "cache"}
 
     # Trading Pairs - Top 8 coins (Best Balance)
+    previous_prices = prices_cache["data"] or {}
     prices = {}
     live_count = 0
+    coingecko_count = 0
+    cached_count = 0
     simulated_count = 0
+    missing_symbols = []
 
     # Get live data from Binance
     for symbol in PRICE_SYMBOLS:
@@ -1042,30 +1148,68 @@ async def get_prices():
                 if len(history) > 100:
                     history.pop(0)
 
-            prices[symbol] = {
-                "price": round(stats['price'], 2),
-                "change_24h": round(stats['change_24h'], 2),
-                "high_24h": round(stats['high_24h'], 2),
-                "low_24h": round(stats['low_24h'], 2),
-                "volume_24h": round(stats['volume_24h'], 2),
-                "source": "Binance"
-            }
+            prices[symbol] = _normalize_price_snapshot(
+                price=stats["price"],
+                change_24h=stats["change_24h"],
+                high_24h=stats["high_24h"],
+                low_24h=stats["low_24h"],
+                volume_24h=stats["volume_24h"],
+                source="Binance",
+            )
         else:
-            simulated_count += 1
-            # Fallback to simulated only if Binance fails
-            prices[symbol] = _get_simulated_price(symbol)
-            print(f"[Market Prices] ⚠️  {symbol}: Using simulated price ${prices[symbol]['price']:.2f}")
+            missing_symbols.append(symbol)
+
+    coingecko_prices = {}
+    if missing_symbols and ENHANCED_AI_AVAILABLE and coingecko_api:
+        try:
+            coingecko_prices = coingecko_api.get_simple_prices(missing_symbols)
+        except Exception as e:
+            logger.warning("CoinGecko market fallback failed: %s", e)
+
+    unresolved_symbols = []
+    for symbol in missing_symbols:
+        coingecko_snapshot = coingecko_prices.get(symbol)
+        if coingecko_snapshot and float(coingecko_snapshot.get("price") or 0) > 0:
+            prices[symbol] = _normalize_price_snapshot(
+                price=coingecko_snapshot["price"],
+                change_24h=coingecko_snapshot.get("change_24h", 0),
+                high_24h=coingecko_snapshot.get("high_24h", coingecko_snapshot["price"]),
+                low_24h=coingecko_snapshot.get("low_24h", coingecko_snapshot["price"]),
+                volume_24h=coingecko_snapshot.get("volume_24h", 0),
+                source=coingecko_snapshot.get("source") or "CoinGecko",
+            )
+            coingecko_count += 1
+            continue
+
+        cached_snapshot = _build_cached_price_snapshot(symbol, previous_prices.get(symbol) or {})
+        if cached_snapshot:
+            prices[symbol] = cached_snapshot
+            cached_count += 1
+            continue
+
+        unresolved_symbols.append(symbol)
+
+    for symbol in unresolved_symbols:
+        simulated_count += 1
+        prices[symbol] = _get_simulated_price(symbol)
+        print(f"[Market Prices] ⚠️  {symbol}: Using simulated price ${prices[symbol]['price']:.2f}")
 
     # Update cache
     prices_cache["data"] = prices
     prices_cache["timestamp"] = current_time
 
-    print(f"[Market Prices] ✅ Returning {live_count} live + {simulated_count} simulated prices")
+    print(
+        f"[Market Prices] ✅ Returning {live_count} Binance + {coingecko_count} CoinGecko + "
+        f"{cached_count} cached + {simulated_count} simulated prices"
+    )
 
     return {
         "success": True,
         "data": prices,
-        "data_source": f"Binance ({live_count} live, {simulated_count} simulated)",
+        "data_source": (
+            f"Binance ({live_count} live), CoinGecko ({coingecko_count} fallback), "
+            f"Cache ({cached_count}), Simulated ({simulated_count})"
+        ),
         "response_time_ms": round((time.time() - current_time) * 1000, 2)
     }
 
@@ -3373,19 +3517,57 @@ async def get_sosovalue_etf_metrics(etf_type: str = "us-btc-spot"):
 @app.get("/api/sosovalue/research-context/{symbol}")
 async def get_sosovalue_research_context(symbol: str, news_limit: int = 5):
     """Get normalized research context for one asset."""
-    service = require_sosovalue_service()
+    normalized_symbol = symbol.upper().strip()
 
     try:
-        context = service.get_research_context(symbol=symbol, news_limit=news_limit)
+        if not SOSOVALUE_AVAILABLE or not sosovalue_service:
+            fallback_reason = "SoSoValue backend service is not available"
+            return {
+                "success": True,
+                "data": build_research_context_fallback(
+                    normalized_symbol,
+                    reason=fallback_reason,
+                    cached_context=sosovalue_research_cache.get(normalized_symbol),
+                ),
+                "fallback": True,
+                "message": fallback_reason,
+            }
+
+        if not sosovalue_service.is_available():
+            fallback_reason = sosovalue_service.get_unavailable_reason()
+            return {
+                "success": True,
+                "data": build_research_context_fallback(
+                    normalized_symbol,
+                    reason=fallback_reason,
+                    cached_context=sosovalue_research_cache.get(normalized_symbol),
+                ),
+                "fallback": True,
+                "message": fallback_reason,
+            }
+
+        context = sosovalue_service.get_research_context(symbol=symbol, news_limit=news_limit)
+        sosovalue_research_cache[normalized_symbol] = context
         return {
             "success": True,
-            "data": context
+            "data": context,
+            "fallback": False,
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"SoSoValue research context error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        fallback_reason = f"SoSoValue research fallback active because the upstream provider failed: {e}"
+        logger.warning(f"SoSoValue research context fallback for {normalized_symbol}: {e}")
+        return {
+            "success": True,
+            "data": build_research_context_fallback(
+                normalized_symbol,
+                reason=fallback_reason,
+                cached_context=sosovalue_research_cache.get(normalized_symbol),
+            ),
+            "fallback": True,
+            "message": fallback_reason,
+        }
 
 
 @app.get("/api/cryptopanic/status")

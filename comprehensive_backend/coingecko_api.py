@@ -28,7 +28,8 @@ class CoinGeckoAPI:
         'DOT': 'polkadot',
         'DOGE': 'dogecoin',
         'MATIC': 'matic-network',
-        'AVAX': 'avalanche-2'
+        'AVAX': 'avalanche-2',
+        'LINK': 'chainlink',
     }
     
     def __init__(self):
@@ -107,6 +108,57 @@ class CoinGeckoAPI:
         except Exception as e:
             logger.error(f"Error parsing CoinGecko data: {e}")
             return None
+
+    def get_simple_prices(self, symbols: List[str]) -> Dict[str, Dict]:
+        """Get batch spot prices with lightweight metadata for multiple symbols."""
+        normalized_symbols = [str(symbol or "").upper() for symbol in symbols]
+        symbol_to_coin_id = {}
+
+        for symbol in normalized_symbols:
+            coin_id = self.get_coin_id(symbol)
+            if coin_id:
+                symbol_to_coin_id[symbol] = coin_id
+
+        if not symbol_to_coin_id:
+            return {}
+
+        data = self._make_request(
+            "simple/price",
+            params={
+                "ids": ",".join(dict.fromkeys(symbol_to_coin_id.values())),
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+                "include_24hr_vol": "true",
+            },
+        )
+
+        if not data:
+            return {}
+
+        timestamp = datetime.now().isoformat()
+        prices: Dict[str, Dict] = {}
+
+        for symbol, coin_id in symbol_to_coin_id.items():
+            coin_data = data.get(coin_id) or {}
+            price = coin_data.get("usd", 0)
+            change_24h = coin_data.get("usd_24h_change", 0)
+            volume_24h = coin_data.get("usd_24h_vol", 0)
+
+            if not price:
+                continue
+
+            prices[symbol] = {
+                "symbol": symbol,
+                "price": float(price),
+                "high_24h": float(price * (1 + abs(change_24h or 0) / 100)),
+                "low_24h": float(price * (1 - abs(change_24h or 0) / 100)),
+                "volume_24h": float(volume_24h or 0),
+                "change_24h": float(change_24h or 0),
+                "timestamp": timestamp,
+                "source": "CoinGecko",
+            }
+
+        return prices
     
     def get_market_chart(self, symbol: str, days: int = 7) -> Optional[Dict]:
         """Get historical market data"""

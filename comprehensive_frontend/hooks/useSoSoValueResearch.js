@@ -23,15 +23,16 @@ export function useSoSoValueResearch(activeSymbol) {
       }
 
       const data = await response.json();
+      const payload = data?.data || data || {};
 
       const normalizedResearch = {
         symbol,
-        catalystScore: data?.catalyst_score || 0,
-        marketRegime: data?.macro_regime || 'NEUTRAL',
-        headlineCount: data?.articles?.length || 0,
-        summary: data?.summary || '',
-        items: data?.articles || [],
-        updatedAt: data?.last_updated || new Date().toISOString(),
+        catalystScore: payload?.catalyst_score || 0,
+        marketRegime: payload?.macro_regime || payload?.macro_context?.overall_regime || 'NEUTRAL',
+        headlineCount: payload?.news_count || payload?.latest_news?.length || payload?.articles?.length || 0,
+        summary: payload?.summary || payload?.rationale?.[0] || '',
+        items: payload?.latest_news || payload?.articles || [],
+        updatedAt: payload?.timestamp || payload?.last_updated || new Date().toISOString(),
       };
 
       setResearchData(normalizedResearch);
