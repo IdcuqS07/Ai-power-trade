@@ -17,6 +17,7 @@ const WalletContext = createContext(null);
 const API_PREFIX = '/api/backend';
 const WALLET_STORAGE_KEY = 'wallet_address';
 const WALLET_DISCONNECT_STORAGE_KEY = 'wallet_disconnected';
+const WALLET_BALANCE_CACHE_PREFIX = 'wallet_balance_cache';
 
 function isSupportedChain(chainId, networkConfig) {
   const activeChainId = normalizeChainId(chainId);
@@ -118,6 +119,10 @@ function createInitialWalletState() {
     networkConfig: getDefaultChainConfig(),
     tokenMeta: FALLBACK_TOKEN,
   };
+}
+
+function getBalanceCacheKey(address) {
+  return `${WALLET_BALANCE_CACHE_PREFIX}:${String(address || '').toLowerCase()}`;
 }
 
 async function fetchWalletJson(path) {
@@ -222,6 +227,39 @@ export function WalletProvider({ children }) {
     }
   };
 
+  const persistCachedBalance = (address, snapshot) => {
+    if (typeof window === 'undefined' || !address || !snapshot) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        getBalanceCacheKey(address),
+        JSON.stringify({
+          address,
+          updatedAt: new Date().toISOString(),
+          ...snapshot,
+        })
+      );
+    } catch (error) {
+      console.warn('Wallet balance cache unavailable:', error);
+    }
+  };
+
+  const readCachedBalance = (address) => {
+    if (typeof window === 'undefined' || !address) {
+      return null;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem(getBalanceCacheKey(address));
+      return rawValue ? JSON.parse(rawValue) : null;
+    } catch (error) {
+      console.warn('Wallet balance cache read failed:', error);
+      return null;
+    }
+  };
+
   const refreshBlockchainConfig = async () => {
     try {
       const payload = await fetchWalletJson('blockchain/status');
@@ -319,6 +357,13 @@ export function WalletProvider({ children }) {
         cooldownSeconds: 0,
       }));
 
+      persistCachedBalance(nextAddress, {
+        balance,
+        can_claim_faucet: false,
+        cooldown_seconds: 0,
+        source: 'wallet-rpc',
+      });
+
       return {
         address: nextAddress,
         balance,
@@ -394,6 +439,13 @@ export function WalletProvider({ children }) {
             cooldownSeconds: 0,
           }));
 
+          persistCachedBalance(nextAddress, {
+            balance,
+            can_claim_faucet: false,
+            cooldown_seconds: 0,
+            source: 'public-rpc',
+          });
+
           return {
             address: nextAddress,
             balance,
@@ -425,6 +477,13 @@ export function WalletProvider({ children }) {
         cooldownSeconds: Number(data.cooldown_seconds || 0),
       }));
 
+      persistCachedBalance(nextAddress, {
+        balance: Number(data.balance || 0),
+        can_claim_faucet: Boolean(data.can_claim_faucet),
+        cooldown_seconds: Number(data.cooldown_seconds || 0),
+        source: 'backend',
+      });
+
       console.log('[WalletContext] Balance updated - Token:', data.balance, 'atUSDT');
       return data;
     } catch (error) {
@@ -448,6 +507,21 @@ export function WalletProvider({ children }) {
         }
       } catch (publicRpcError) {
         console.error('[WalletContext] Public RPC balance fallback failed:', publicRpcError);
+      }
+
+      const cachedBalance = readCachedBalance(nextAddress);
+      if (cachedBalance && Number.isFinite(Number(cachedBalance.balance))) {
+        safeSetWalletState((current) => ({
+          ...current,
+          tokenBalance: Number(cachedBalance.balance || 0),
+          tokenBalanceStatus: 'ready',
+          tokenBalanceSource: 'cached',
+          tokenBalanceError: '',
+          canClaim: Boolean(cachedBalance.can_claim_faucet),
+          cooldownSeconds: Number(cachedBalance.cooldown_seconds || 0),
+        }));
+
+        return cachedBalance;
       }
 
       safeSetWalletState((current) => ({

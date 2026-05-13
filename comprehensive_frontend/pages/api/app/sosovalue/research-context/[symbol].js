@@ -1,10 +1,73 @@
 import { buildBackendApiUrl } from '../../../../../lib/backendOrigin';
+import { researchFeed } from '../../../../../lib/premiumData';
 
 const REQUEST_TIMEOUT_MS = 30000; // Increased to 30s for large ETF responses
 const researchSnapshotCache = new Map();
 
 function buildCacheKey(symbol, newsLimit) {
   return `${String(symbol || '').toUpperCase()}::${String(newsLimit || 5)}`;
+}
+
+function buildFallbackResearchPayload(symbol, reason = 'Live research is temporarily unavailable.') {
+  const normalizedSymbol = String(symbol || 'BTC').toUpperCase();
+  const relatedEntries = researchFeed.filter((item) =>
+    Array.isArray(item.related) && item.related.includes(normalizedSymbol)
+  );
+  const selectedEntries = (relatedEntries.length ? relatedEntries : researchFeed.slice(0, 2)).slice(0, 3);
+  const timestamp = new Date().toISOString();
+
+  return {
+    success: true,
+    fallback: true,
+    message: reason,
+    data: {
+      symbol: normalizedSymbol,
+      summary:
+        selectedEntries[0]?.summary ||
+        `Curated ${normalizedSymbol} research fallback is active while the live narrative feed reconnects.`,
+      news_count: selectedEntries.length,
+      headlineCount: selectedEntries.length,
+      catalyst_score: selectedEntries.length ? 48 : 35,
+      catalyst_label: selectedEntries.length ? 'MEDIUM' : 'LOW',
+      sentiment: {
+        label: selectedEntries.length ? 'NEUTRAL' : 'STANDBY',
+        score: selectedEntries.length ? 52 : 45,
+        description: reason,
+      },
+      rationale: [
+        selectedEntries[0]?.whyItMatters ||
+          `Curated ${normalizedSymbol} context is active while the live research provider recovers.`,
+        reason,
+      ],
+      latest_news: selectedEntries.map((item, index) => ({
+        id: item.id || `fallback-${normalizedSymbol}-${index}`,
+        title: item.title,
+        summary: item.summary,
+        category_label: item.tag || 'Research',
+        category: item.tag || 'Research',
+        sentiment: item.sentiment || 'Neutral',
+        importance_score: 55 - index * 4,
+        published_at: timestamp,
+      })),
+      articles: selectedEntries.map((item, index) => ({
+        id: item.id || `fallback-${normalizedSymbol}-${index}`,
+        title: item.title,
+        summary: item.summary,
+        category_label: item.tag || 'Research',
+        category: item.tag || 'Research',
+        sentiment: item.sentiment || 'Neutral',
+        importance_score: 55 - index * 4,
+        published_at: timestamp,
+      })),
+      macro_regime: 'UNAVAILABLE',
+      macro_context: {
+        overall_regime: 'UNAVAILABLE',
+        error: reason,
+      },
+      timestamp,
+      source: 'Curated research fallback',
+    },
+  };
 }
 
 export default async function handler(req, res) {
@@ -45,10 +108,12 @@ export default async function handler(req, res) {
         });
       }
 
-      return res.status(response.status).json({
-        success: false,
-        error: data?.error || text || `Backend returned ${response.status}`
-      });
+      return res.status(200).json(
+        buildFallbackResearchPayload(
+          symbol,
+          data?.error || text || `Backend returned ${response.status}`
+        )
+      );
     }
 
     if (data?.success !== false) {
@@ -73,15 +138,11 @@ export default async function handler(req, res) {
       });
     }
 
-    if (error.name === 'AbortError') {
-      return res.status(504).json({
-        success: false,
-        error: 'Request timeout'
-      });
-    }
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    return res.status(200).json(
+      buildFallbackResearchPayload(
+        symbol,
+        error.name === 'AbortError' ? 'Request timeout' : error.message
+      )
+    );
   }
 }
