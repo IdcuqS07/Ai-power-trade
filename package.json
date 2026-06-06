@@ -7,5 +7,10 @@
     "build": "cd comprehensive_frontend && npm run build",
     "start": "cd comprehensive_frontend && npm start",
     "install": "cd comprehensive_frontend && npm install"
+  },
+  "dependencies": {
+    "next": "14.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   }
 }
