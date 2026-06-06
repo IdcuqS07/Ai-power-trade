@@ -6,8 +6,7 @@
     "dev": "cd comprehensive_frontend && npm run dev",
     "build": "cd comprehensive_frontend && npm run build",
     "vercel-build": "cd comprehensive_frontend && npm run build",
-    "start": "cd comprehensive_frontend && npm start",
-    "install": "cd comprehensive_frontend && npm install"
+    "start": "cd comprehensive_frontend && npm start"
   },
   "dependencies": {
     "next": "14.0.0",

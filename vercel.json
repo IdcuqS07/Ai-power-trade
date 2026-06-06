@@ -2,5 +2,5 @@
   "buildCommand": "cd comprehensive_frontend && npm run build",
   "outputDirectory": "comprehensive_frontend/.next",
   "framework": "nextjs",
-  "installCommand": "cd comprehensive_frontend && npm install"
+  "installCommand": "npm install && cd comprehensive_frontend && npm install"
 }
